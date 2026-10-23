@@ -29,7 +29,19 @@ export interface GenerateOptions {
 const MAX_STATIONS = 4;
 const MIN_ROTATION = 5;
 const MAX_ROTATION = 12;
-const CIRCUIT_TRANSITION = 2;
+export const CIRCUIT_TRANSITION = 2;
+
+/** A circuit with a new rotation length: station times, total time and the "rotate after" line all follow. */
+export function withRotation(item: PlanItem, rotate: number): PlanItem {
+  const count = item.children?.length ?? 0;
+  return {
+    ...item,
+    rotateMinutes: rotate,
+    minutes: rotate * count + CIRCUIT_TRANSITION,
+    children: item.children?.map((c) => ({ ...c, minutes: rotate })),
+    lines: item.lines.map((l, i) => (i === 0 ? l.replace(/rotate after \d+ minutes/, `rotate after ${rotate} minutes`) : l)),
+  };
+}
 
 /** Turn a drill into a plan item. Used by the generator and the editor. */
 export function drillToItem(drill: DrillLite, id: string, overrides: Partial<PlanItem> = {}): PlanItem {
@@ -145,11 +157,13 @@ export function generatePlan(input: PlanInput, drills: DrillLite[], opts: Genera
   // ---- Closing blocks ------------------------------------------------------
   let endGame: PlanItem | undefined;
   if (input.options.endGame) {
-    const game = pick(["GAME"], "");
+    // Only games that fit in what's left after the opening blocks.
+    const room = input.durationMin - totalMinutes(opening);
+    const game = pick(["GAME"], "", (d) => d.durationMin <= room);
     if (game) {
       endGame = drillToItem(game, nextId(), {
         title: `${cfg.labels.endGame}: ${game.name}`,
-        minutes: Math.max(game.durationMin, Math.min(game.durationMax, T.endGameMinutes)),
+        minutes: Math.max(game.durationMin, Math.min(game.durationMax, T.endGameMinutes, room)),
       });
     }
   }
@@ -315,7 +329,7 @@ export function generatePlan(input: PlanInput, drills: DrillLite[], opts: Genera
 
   // ---- Assemble, add water breaks, and fit to the practice length ----------
   const body: PlanItem[] = [...opening, ...main, ...(endGame ? [endGame] : [])];
-  const items = insertWaterBreaks(body, T.waterBreakEvery, T.waterBreakMinutes, nextId);
+  const items = insertWaterBreaks(body, input.durationMin, T.waterBreakEvery, T.waterBreakMinutes, nextId);
   fitToDuration(items, input.durationMin, endGame?.id, eligible, nextId);
 
   items.push({
@@ -344,7 +358,7 @@ export function generatePlan(input: PlanInput, drills: DrillLite[], opts: Genera
   return { items, teamLeader, warnings, seed: opts.seed };
 }
 
-function insertWaterBreaks(items: PlanItem[], every: number, minutes: number, nextId: () => string): PlanItem[] {
+function insertWaterBreaks(items: PlanItem[], duration: number, every: number, minutes: number, nextId: () => string): PlanItem[] {
   const out: PlanItem[] = [];
   const tolerance = 7;
   let elapsed = 0;
@@ -353,7 +367,8 @@ function insertWaterBreaks(items: PlanItem[], every: number, minutes: number, ne
     out.push(item);
     elapsed += item.minutes;
     const isLast = i === items.length - 1;
-    if (!isLast && elapsed >= nextAt - tolerance) {
+    // No break when the practice is nearly over (or shorter than one interval).
+    if (!isLast && elapsed >= nextAt - tolerance && elapsed < duration - tolerance) {
       out.push({ id: nextId(), kind: "water", title: "Water Break", minutes, lines: [] });
       elapsed += minutes;
       nextAt = elapsed + every;
@@ -415,22 +430,17 @@ function fitToDuration(items: PlanItem[], duration: number, endGameId: string | 
       candidates[0].children?.forEach((c) => (c.minutes = candidates[0].minutes));
       diff += 1;
     } else if (circuit) {
-      circuit.rotateMinutes! -= 1;
-      circuit.minutes -= circuit.children!.length;
-      circuit.children!.forEach((c) => (c.minutes = circuit.rotateMinutes!));
-      circuit.lines = [circuit.lines[0].replace(/rotate after \d+ minutes/, `rotate after ${circuit.rotateMinutes} minutes`), ...circuit.lines.slice(1)];
+      Object.assign(circuit, withRotation(circuit, circuit.rotateMinutes! - 1));
       diff += circuit.children!.length;
     } else break;
   }
 }
 
 function grow(item: PlanItem, n: number) {
-  item.minutes += n;
   if (item.kind === "circuit" && item.children) {
-    item.rotateMinutes! += 1;
-    item.children.forEach((c) => (c.minutes = item.rotateMinutes!));
-    item.lines = [item.lines[0].replace(/rotate after \d+ minutes/, `rotate after ${item.rotateMinutes} minutes`), ...item.lines.slice(1)];
+    Object.assign(item, withRotation(item, item.rotateMinutes! + 1));
   } else {
+    item.minutes += n;
     item.children?.forEach((c) => (c.minutes = item.minutes));
   }
 }

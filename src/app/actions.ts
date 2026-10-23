@@ -44,6 +44,10 @@ export async function createPlan(raw: PlanInput): Promise<{ id?: string; error?:
   const parsed = planInputSchema.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues.map((i) => i.message).join("; ") };
   const input = parsed.data as PlanInput;
+  // A plan copied from an older one can reference a team deleted since; drop it rather than fail the insert.
+  if (input.teamId && !(await prisma.team.findUnique({ where: { id: input.teamId }, select: { id: true } }))) {
+    input.teamId = undefined;
+  }
   const seed = randomSeed();
   const { sport, plan } = await runGenerator(input, seed);
   const created = await prisma.plan.create({

@@ -1,6 +1,6 @@
 import { clockAt, planHeader } from "../format";
 import { displayTitles, startOffsets } from "../generator/timeline";
-import type { PlanItem } from "../types";
+import type { PlanGroup, PlanItem } from "../types";
 
 // One outline model feeds every export (print, .docx, Google Docs) so they
 // all match the coach's numbered-outline format.
@@ -32,6 +32,9 @@ export interface PlanForDoc {
 
 const leaf = (text: string): DocNode => ({ text, children: [] });
 
+/** "Group 1: Aura, Piper", or "Group 1 (4 players)" when there is no roster. */
+export const groupLine = (g: PlanGroup): string => (g.players.length ? `${g.name}: ${g.players.join(", ")}` : `${g.name} (${g.size} players)`);
+
 function stationNode(s: PlanItem): DocNode {
   const coach = s.coach ? `-Coach ${s.coach}` : "";
   const who = s.who ? ` (${s.who})` : "";
@@ -45,7 +48,7 @@ export function planToDocModel(plan: PlanForDoc): DocModel {
     const time = plan.showTimes && item.minutes > 0 ? `  (${clockAt(plan.startTime, offsets[i])}, ${item.minutes} min)` : "";
     const children: DocNode[] = item.lines.map(leaf);
     if (item.groups?.length) {
-      for (const g of item.groups) children.push(leaf(g.players.length ? `${g.name}: ${g.players.join(", ")}` : `${g.name} (${g.size} players)`));
+      for (const g of item.groups) children.push(leaf(groupLine(g)));
     }
     item.children?.forEach((s) => children.push(stationNode(s)));
     return { text: titles[i], bold: true, link: item.videoUrl, suffix: time, children };

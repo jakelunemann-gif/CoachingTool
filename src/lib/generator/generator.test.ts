@@ -93,6 +93,29 @@ describe("generatePlan", () => {
     expect(plan.items[0].lines).toContain("Missing: Vivian");
   });
 
+  it("fits short practices exactly, even with the intro on", () => {
+    for (const durationMin of [30, 45]) {
+      for (const intro of [false, true]) {
+        for (let seed = 1; seed <= 40; seed++) {
+          const input = { ...baseInput, durationMin, options: { ...baseInput.options, intro } };
+          const plan = generatePlan(input, library, { seed, sportConfig: config });
+          expect(totalMinutes(plan.items), `${durationMin}min intro=${intro} seed=${seed}`).toBe(durationMin);
+        }
+      }
+    }
+  });
+
+  it("doesn't add a water break in the last few minutes", () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const plan = generatePlan({ ...baseInput, durationMin: 30 }, library, { seed, sportConfig: config });
+      let t = 0;
+      for (const item of plan.items) {
+        if (item.kind === "water") expect(30 - t).toBeGreaterThan(7);
+        t += item.minutes;
+      }
+    }
+  });
+
   it("spaces water breaks out and never ends on one", () => {
     const plan = generatePlan({ ...baseInput, durationMin: 120 }, library, { seed: 3, sportConfig: config });
     const kinds = plan.items.map((i) => i.kind);

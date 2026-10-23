@@ -33,7 +33,8 @@ export function PlanForm({
 
   const [sportSlug, setSportSlug] = useState(defaults?.sportSlug ?? sports[0]?.slug ?? "");
   const sport = sports.find((s) => s.slug === sportSlug) ?? sports[0];
-  const [teamId, setTeamId] = useState(defaults?.teamId ?? "");
+  // The source plan's team may have been deleted since.
+  const [teamId, setTeamId] = useState(teams.some((t) => t.id === defaults?.teamId) ? defaults!.teamId! : "");
   const team = teams.find((t) => t.id === teamId);
   const [teamName, setTeamName] = useState(defaults?.teamName ?? "");
   const [ageSlug, setAgeSlug] = useState(defaults?.ageSlug ?? "");
@@ -66,6 +67,15 @@ export function PlanForm({
       setAgeSlug(t.ageSlug);
       setSkillSlug(t.skillSlug);
       setSportSlug(t.sportSlug);
+    }
+  };
+
+  const pickSport = (slug: string) => {
+    setSportSlug(slug);
+    // A saved team belongs to one sport; don't carry its roster into another.
+    if (team && team.sportSlug !== slug) {
+      setTeamId("");
+      setAbsent([]);
     }
   };
 
@@ -122,7 +132,7 @@ export function PlanForm({
         {sports.length > 1 && (
           <div>
             <label className="label" htmlFor="sport">Sport</label>
-            <select id="sport" className="input" value={sportSlug} onChange={(e) => setSportSlug(e.target.value)}>
+            <select id="sport" className="input" value={sportSlug} onChange={(e) => pickSport(e.target.value)}>
               {sports.map((s) => (
                 <option key={s.slug} value={s.slug}>{s.name}</option>
               ))}

@@ -9,16 +9,83 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { deletePlan, regeneratePlan, savePlan } from "@/app/actions";
 import type { PlanRecord } from "@/lib/data";
-import { planToDocModel } from "@/lib/export/docModel";
-import { clockAt } from "@/lib/format";
-import { alternatives, compatibleTypes, displayTitles, drillToItem, startOffsets, totalMinutes } from "@/lib/generator";
-import { BLOCK_TYPE_LABELS, type BlockType, type DrillLite, type PlanItem } from "@/lib/types";
+import { groupLine, planToDocModel } from "@/lib/export/docModel";
+import { clockAt, numberWord } from "@/lib/format";
+import { alternatives, compatibleTypes, displayTitles, drillToItem, startOffsets, totalMinutes, withRotation } from "@/lib/generator";
+import { BLOCK_TYPE_LABELS, type BlockType, type DrillLite, type PlanGroup, type PlanItem } from "@/lib/types";
 import { PlanDocument } from "./PlanDocument";
 
 const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `id-${Date.now()}-${Math.random()}`);
 
 const linesToText = (lines: string[]) => lines.join("\n");
 const textToLines = (text: string) => text.split("\n").map((l) => l.trimEnd()).filter((l) => l.trim());
+
+/** Parse the groups textarea: "Group 1: Aura, Piper" or "Group 1 (4 players)" per line. */
+function parseGroups(text: string, prev: PlanGroup[]): PlanGroup[] {
+  return text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((line, i) => {
+      const colon = line.indexOf(":");
+      if (colon >= 0) {
+        const players = line.slice(colon + 1).split(",").map((p) => p.trim()).filter(Boolean);
+        return { name: line.slice(0, colon).trim() || `Group ${i + 1}`, players, size: players.length || prev[i]?.size || 0 };
+      }
+      const count = line.match(/^(.*?)\s*\((\d+) players?\)$/);
+      if (count) return { name: count[1] || `Group ${i + 1}`, players: [], size: Number(count[2]) };
+      return { name: line, players: [], size: prev[i]?.size ?? 0 };
+    });
+}
+
+/** Re-split groups to `count`, moving players from dropped groups instead of losing them. */
+function resizeGroups(groups: PlanGroup[], count: number): PlanGroup[] {
+  if (groups.length === 0) return groups;
+  const n = Math.max(1, count);
+  const out = groups.slice(0, n).map((g) => ({ ...g, players: [...g.players] }));
+  while (out.length < n) out.push({ name: `Group ${out.length + 1}`, players: [], size: 0 });
+  const bySize = () => [...out].sort((a, b) => a.size - b.size);
+  for (const g of groups.slice(n)) {
+    for (let k = 0; k < g.size; k++) {
+      const smallest = bySize()[0];
+      if (g.players[k]) smallest.players.push(g.players[k]);
+      smallest.size += 1;
+    }
+  }
+  for (let guard = 0; guard < 200; guard++) {
+    const sorted = bySize();
+    const small = sorted[0];
+    const big = sorted[sorted.length - 1];
+    if (big.size - small.size <= 1) break;
+    const p = big.players.pop();
+    if (p) small.players.push(p);
+    big.size -= 1;
+    small.size += 1;
+  }
+  return out;
+}
+
+/** A circuit or breakout with a new set of stations; circuits keep times and groups in step. */
+function withStations(item: PlanItem, children: PlanItem[]): PlanItem {
+  if (item.kind !== "circuit") return { ...item, children };
+  const lines = item.lines.map((l, i) => (i === 0 ? l.replace(/Split into (\w+ )?even groups/, `Split into ${numberWord(Math.max(1, children.length))} even groups`) : l));
+  return withRotation({ ...item, children, lines, groups: item.groups && resizeGroups(item.groups, children.length) }, item.rotateMinutes ?? 8);
+}
+
+/** Edits groups as free text and applies them on blur, so typing commas and spaces isn't undone mid-word. */
+function GroupsField({ groups, onCommit }: { groups: PlanGroup[]; onCommit: (groups: PlanGroup[]) => void }) {
+  const [text, setText] = useState(() => groups.map(groupLine).join("\n"));
+  return (
+    <textarea
+      className="input text-sm"
+      rows={Math.max(1, groups.length)}
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => onCommit(parseGroups(text, groups))}
+      aria-label="Groups"
+    />
+  );
+}
 
 /** Replace the drill in an item, keeping its slot (kind, time, coach, who). */
 function swapDrill(item: PlanItem, drill: DrillLite, oldDrill?: DrillLite): PlanItem {
@@ -139,15 +206,7 @@ export function PlanEditor({ plan, drills }: { plan: PlanRecord; drills: DrillLi
     update(items.map((i) => (i.id === parentId ? { ...i, children: i.children!.map((c) => (c.id === stationId ? { ...c, ...change } : c)) } : i)));
   const remove = (id: string) => update(items.filter((i) => i.id !== id));
 
-  const setRotation = (item: PlanItem, rotate: number) => {
-    const n = item.children?.length ?? 0;
-    patch(item.id, {
-      rotateMinutes: rotate,
-      minutes: rotate * n + 2,
-      children: item.children?.map((c) => ({ ...c, minutes: rotate })),
-      lines: item.lines.map((l, i) => (i === 0 ? l.replace(/rotate after \d+ minutes/, `rotate after ${rotate} minutes`) : l)),
-    });
-  };
+  const setRotation = (item: PlanItem, rotate: number) => patch(item.id, withRotation(item, rotate));
 
   const usedIds = useMemo(() => new Set(items.flatMap((i) => [i.drillId, ...(i.children ?? []).map((c) => c.drillId)]).filter((x): x is string => !!x)), [items]);
   const total = totalMinutes(items);
@@ -156,42 +215,80 @@ export function PlanEditor({ plan, drills }: { plan: PlanRecord; drills: DrillLi
   const coaches = plan.input.coaches;
   const doc = planToDocModel({ title, date: plan.date, location, startTime: plan.startTime, durationMin: plan.durationMin, items, showTimes });
 
-  const save = async () => {
+  /** Returns false when the save failed (the message says so). */
+  const save = async (): Promise<boolean> => {
     setBusy("save");
-    await savePlan(plan.id, { items, showTimes, title, location });
-    setDirty(false);
-    setBusy("");
-    setMessage("Saved");
+    try {
+      await savePlan(plan.id, { items, showTimes, title, location });
+      setDirty(false);
+      setMessage("Saved");
+      return true;
+    } catch {
+      setMessage("Couldn't save the plan. Try again.");
+      return false;
+    } finally {
+      setBusy("");
+    }
   };
-  const saveIfDirty = async () => {
-    if (dirty) await save();
-  };
+  const saveIfDirty = async () => !dirty || (await save());
 
   const regenerate = async () => {
     if (!confirm("Build a new plan from the same setup? Your edits to this plan will be replaced.")) return;
     setBusy("regen");
-    const res = await regeneratePlan(plan.id);
-    setItems(res.items);
-    setWarnings(res.warnings);
-    setDirty(false);
-    setBusy("");
-    setMessage("New plan generated");
+    try {
+      const res = await regeneratePlan(plan.id);
+      setItems(res.items);
+      setWarnings(res.warnings);
+      setDirty(false);
+      setMessage("New plan generated");
+    } catch {
+      setMessage("Couldn't build a new plan. Try again.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  // Open the tab during the click, before any await, so popup blockers allow it.
+  const openAfterSave = async (url: string) => {
+    const tab = window.open("about:blank", "_blank");
+    if (!(await saveIfDirty())) {
+      tab?.close();
+      return;
+    }
+    if (tab) tab.location.href = url;
+    else window.location.href = url;
   };
 
   const saveToDrive = async () => {
-    setBusy("drive");
     setMessage("");
-    await saveIfDirty();
-    const res = await fetch(`/api/plans/${plan.id}/drive`, { method: "POST" });
-    const data = await res.json();
-    setBusy("");
-    if (data.needsAuth) {
-      signIn("google", { callbackUrl: window.location.href });
-      return;
+    const tab = window.open("about:blank", "_blank");
+    try {
+      if (!(await saveIfDirty())) {
+        tab?.close();
+        return;
+      }
+      setBusy("drive");
+      const res = await fetch(`/api/plans/${plan.id}/drive`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (data.needsAuth) {
+        tab?.close();
+        signIn("google", { callbackUrl: window.location.href });
+        return;
+      }
+      if (!res.ok) {
+        tab?.close();
+        setMessage(data.error ?? "Google Drive upload failed");
+        return;
+      }
+      setMessage(data.folderFallback ? "Saved to My Drive (the app can't reach your plans folder, see Settings)" : data.updated ? "Updated the Google Doc" : "Saved to Google Drive");
+      if (tab) tab.location.href = data.url;
+      else window.open(data.url, "_blank");
+    } catch {
+      tab?.close();
+      setMessage("Google Drive upload failed");
+    } finally {
+      setBusy("");
     }
-    if (!res.ok) return setMessage(data.error ?? "Google Drive upload failed");
-    setMessage(data.folderFallback ? "Saved to My Drive (the app can't reach your plans folder, see Settings)" : data.updated ? "Updated the Google Doc" : "Saved to Google Drive");
-    window.open(data.url, "_blank");
   };
 
   const onDragEnd = (e: DragEndEvent) => {
@@ -237,8 +334,8 @@ export function PlanEditor({ plan, drills }: { plan: PlanRecord; drills: DrillLi
             </div>
           </div>
           <div className="flex flex-wrap gap-2 border-t pt-3">
-            <button className="btn" onClick={async () => { await saveIfDirty(); window.open(`/plans/${plan.id}/print`, "_blank"); }}>Print / PDF</button>
-            <button className="btn" onClick={async () => { await saveIfDirty(); window.location.href = `/api/plans/${plan.id}/docx`; }}>Download .docx</button>
+            <button className="btn" onClick={() => openAfterSave(`/plans/${plan.id}/print`)}>Print / PDF</button>
+            <button className="btn" onClick={async () => { if (await saveIfDirty()) window.location.href = `/api/plans/${plan.id}/docx`; }}>Download .docx</button>
             <button className="btn" onClick={saveToDrive} disabled={!!busy}>{busy === "drive" ? "Saving to Drive…" : plan.driveFileId ? "Update Google Doc" : "Save to Google Drive"}</button>
             <Link className="btn" href={`/plans/new?from=${plan.id}`}>Use setup for next practice</Link>
             <button
@@ -305,21 +402,7 @@ export function PlanEditor({ plan, drills }: { plan: PlanRecord; drills: DrillLi
                     {item.groups && (
                       <div className="mt-2">
                         <span className="label">Groups</span>
-                        <textarea
-                          className="input text-sm"
-                          rows={item.groups.length}
-                          value={item.groups.map((g) => (g.players.length ? `${g.name}: ${g.players.join(", ")}` : `${g.name} (${g.size} players)`)).join("\n")}
-                          onChange={(e) =>
-                            patch(item.id, {
-                              groups: e.target.value.split("\n").map((line, i) => {
-                                const [name, rest = ""] = line.includes(":") ? [line.slice(0, line.indexOf(":")), line.slice(line.indexOf(":") + 1)] : [line, ""];
-                                const players = rest.split(",").map((p) => p.trim()).filter(Boolean);
-                                return { name: name.trim() || `Group ${i + 1}`, players, size: players.length || item.groups![i]?.size || 0 };
-                              }),
-                            })
-                          }
-                          aria-label="Groups"
-                        />
+                        <GroupsField key={item.groups.map(groupLine).join("\n")} groups={item.groups} onCommit={(groups) => patch(item.id, { groups })} />
                       </div>
                     )}
 
@@ -342,10 +425,7 @@ export function PlanEditor({ plan, drills }: { plan: PlanRecord; drills: DrillLi
                                 className="btn btn-sm btn-danger"
                                 aria-label={`Remove station ${s.title}`}
                                 onClick={() => {
-                                  const children = item.children!.filter((c) => c.id !== s.id);
-                                  if (item.kind === "circuit") {
-                                    patch(item.id, { children, minutes: (item.rotateMinutes ?? 8) * children.length + 2, groups: item.groups?.slice(0, Math.max(1, children.length)) });
-                                  } else patch(item.id, { children });
+                                  patch(item.id, withStations(item, item.children!.filter((c) => c.id !== s.id)));
                                 }}
                               >
                                 ✕
@@ -372,8 +452,7 @@ export function PlanEditor({ plan, drills }: { plan: PlanRecord; drills: DrillLi
                               onPick: (d) => {
                                 const rotate = item.rotateMinutes ?? item.minutes;
                                 const st = drillToItem(d, newId(), { kind: "station", minutes: rotate, coach: coaches[item.children!.length] });
-                                const children = [...item.children!, st];
-                                patch(item.id, item.kind === "circuit" ? { children, minutes: rotate * children.length + 2 } : { children });
+                                patch(item.id, withStations(item, [...item.children!, st]));
                                 setPicker(null);
                               },
                             })
