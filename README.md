@@ -62,8 +62,33 @@ The seed can be re-run safely (`npm run db:seed`). It only adds drills that don'
 
 ## Hosting
 
-- **Node host** (Render, Railway, Fly, a home server): `npm run build && npx prisma migrate deploy && npm start`. SQLite works if the disk is persistent.
+### Railway (recommended)
+
+The repo includes a `Dockerfile` and `railway.json`, so Railway builds and starts it with no extra setup. SQLite lives on a Railway volume. Hobby plan, about $5/month.
+
+1. Sign in at [railway.com](https://railway.com) with GitHub. Click **New Project → Deploy from GitHub repo** and pick this repo.
+2. The first deploy will wait for a volume. Right-click the service (or open the command palette) → **Attach Volume**, mount path `/data`.
+3. Open the service → **Variables** and add:
+   ```
+   DATABASE_URL=file:/data/app.db
+   APP_PASSWORD=<a password you'll share with your coaches>
+   NEXTAUTH_SECRET=<any long random string>
+   ```
+4. Open **Settings → Networking → Generate Domain**. You get a URL like `https://coachingtool-production.up.railway.app`. Add `NEXTAUTH_URL=<that URL>` to the variables.
+5. Railway redeploys after each change. Every start applies migrations and seeds the drill library (existing drills and edits are kept).
+
+Open the URL. The browser asks for a username and password: type anything as the username and `APP_PASSWORD` as the password. Every push to the default branch redeploys automatically.
+
+**Google Drive on the hosted app:** add `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (and `GOOGLE_DRIVE_SCOPE=drive` if you use it) to the Railway variables. In the Google Cloud Console, add `<your URL>/api/auth/callback/google` as an authorized redirect URI.
+
+**Backups:** the whole database is `/data/app.db` on the volume. Railway can back up volumes from the volume's **Backups** tab.
+
+### Other hosts
+
+- **Any Docker host** (Fly, Render, a home server): build the `Dockerfile`, mount a persistent disk, and set the same variables. The container listens on `$PORT` (default 3000).
 - **Vercel or other serverless**: needs Postgres. In `prisma/schema.prisma` change `provider = "sqlite"` to `"postgresql"`, set `DATABASE_URL`, delete `prisma/migrations`, and run `npx prisma migrate dev --name init`.
+
+Leave `APP_PASSWORD` unset only if you're fine with anyone who finds the URL viewing and editing your rosters and plans.
 
 ## Tests
 
