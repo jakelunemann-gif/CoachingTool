@@ -1,0 +1,138 @@
+// Data model is sport-agnostic: every sport-specific vocabulary (age levels,
+// focus areas, surfaces, equipment, player roles) lives in rows, not code.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Sport {
+  id       String  @id @default(cuid())
+  slug     String  @unique
+  name     String
+  // Tags are shared by every sport with the same tagGroup (baseball and
+  // softball both use "diamond"), plus tags in the "global" group.
+  tagGroup String
+  // SportConfig JSON: player roles, side-work pairing, block template.
+  config   Json
+  drills   Drill[]
+  teams    Team[]
+  plans    Plan[]
+}
+
+// kind: AGE | SKILL | FOCUS | SURFACE | EQUIPMENT
+model Tag {
+  id        String  @id @default(cuid())
+  kind      String
+  slug      String
+  label     String
+  group     String  @default("global")
+  sortOrder Int     @default(0)
+  drills    Drill[]
+
+  @@unique([kind, slug, group])
+}
+
+model Drill {
+  id              String       @id @default(cuid())
+  name            String
+  // WARMUP | THROWING | DAILY | STATION | SIDE_WORK | TEAM | GAME | TALK
+  blockType       String
+  description     String       @default("")
+  // Newline-separated bullet points that are copied into the plan.
+  instructions    String       @default("")
+  durationMin     Int          @default(5)
+  durationTypical Int          @default(10)
+  durationMax     Int          @default(15)
+  coachesRequired Int          @default(1)
+  minPlayers      Int          @default(1)
+  maxPlayers      Int?
+  // Free-form provenance, e.g. "Coach plans 2024-2026" or "needs review".
+  source          String       @default("")
+  sports          Sport[]
+  // Age/skill/focus/surface tags say where the drill fits; equipment tags
+  // are what it requires. An empty age or surface list means "any".
+  tags            Tag[]
+  videos          DrillVideo[]
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+model DrillVideo {
+  id        String @id @default(cuid())
+  drillId   String
+  drill     Drill  @relation(fields: [drillId], references: [id], onDelete: Cascade)
+  url       String
+  label     String @default("")
+  sortOrder Int    @default(0)
+}
+
+model Team {
+  id        String   @id @default(cuid())
+  name      String
+  sportId   String
+  sport     Sport    @relation(fields: [sportId], references: [id])
+  ageSlug   String
+  skillSlug String   @default("")
+  season    String   @default("")
+  players   Player[]
+  plans     Plan[]
+  createdAt DateTime @default(now())
+}
+
+model Player {
+  id        String  @id @default(cuid())
+  teamId    String
+  team      Team    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name      String
+  // string[] of role slugs from the sport config, e.g. ["pitcher"]
+  roles     Json
+  active    Boolean @default(true)
+  sortOrder Int     @default(0)
+}
+
+model Coach {
+  id     String  @id @default(cuid())
+  name   String  @unique
+  active Boolean @default(true)
+}
+
+model Location {
+  id          String @id @default(cuid())
+  name        String @unique
+  surfaceSlug String @default("")
+}
+
+model Setting {
+  key   String @id
+  value String
+}
+
+model Plan {
+  id          String   @id @default(cuid())
+  title       String
+  sportId     String
+  sport       Sport    @relation(fields: [sportId], references: [id])
+  teamId      String?
+  team        Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  date        String // YYYY-MM-DD
+  startTime   String // HH:MM, 24h
+  durationMin Int
+  location    String
+  teamLeader  String   @default("")
+  seed        Int
+  // PlanInput JSON (the form as submitted)
+  input       Json
+  // PlanItem[] JSON tree, edited as a whole in the plan editor
+  items       Json
+  showTimes   Boolean  @default(true)
+  // string[] JSON of generator warnings shown in the editor
+  warnings    Json     @default("[]")
+  driveFileId String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

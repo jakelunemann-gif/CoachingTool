@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .btn { @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50; }
+  .btn-primary { @apply border-brand-600 bg-brand-600 text-white hover:bg-brand-700; }
+  .btn-danger { @apply border-red-200 text-red-700 hover:bg-red-50; }
+  .btn-sm { @apply px-2 py-1 text-xs; }
+  .input { @apply w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500; }
+  .label { @apply mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500; }
+  .card { @apply rounded-lg border border-slate-200 bg-white p-4 shadow-sm; }
+  .chip { @apply inline-flex cursor-pointer select-none items-center rounded-full border px-2.5 py-1 text-xs font-medium transition; }
+  .chip-on { @apply border-brand-600 bg-brand-600 text-white; }
+  .chip-off { @apply border-slate-300 bg-white text-slate-700 hover:border-brand-500; }
+  .h1 { @apply text-2xl font-bold text-slate-900; }
+  .h2 { @apply text-lg font-semibold text-slate-900; }
+}
+
+/* Plan document: matches the coach's Google Docs outline */
+.plan-doc { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; line-height: 1.45; color: #111; }
+.plan-doc ol { padding-left: 1.6em; margin: 0.15em 0; }
+.plan-doc ol.l0 { list-style-type: decimal; }
+.plan-doc ol.l1 { list-style-type: lower-alpha; }
+.plan-doc ol.l2 { list-style-type: lower-roman; }
+.plan-doc ol.l3 { list-style-type: decimal; }
+.plan-doc li { margin: 0.1em 0; }
+.plan-doc a { color: #1155cc; text-decoration: underline; }
+.plan-doc .suffix-time { color: #6b7280; font-size: 0.9em; }
+
+@media print {
+  @page { margin: 0.75in; }
+  body { background: white !important; }
+}
