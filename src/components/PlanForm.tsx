@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPlan } from "@/app/actions";
 import type { PlanInput, SportBundle, TeamWithPlayers } from "@/lib/types";
 import { ChipSelect } from "./ChipSelect";
@@ -42,6 +42,17 @@ export function PlanForm({
   const [date, setDate] = useState(today());
   const [startTime, setStartTime] = useState(defaults?.startTime ?? "18:00");
   const [durationMin, setDurationMin] = useState(defaults?.durationMin ?? 90);
+  // "Custom…" is its own mode so picking it (or typing a preset value) doesn't snap back to a preset.
+  const [customDuration, setCustomDuration] = useState(!DURATIONS.includes(defaults?.durationMin ?? 90));
+  const [customText, setCustomText] = useState(String(defaults?.durationMin ?? 90));
+  const customRef = useRef<HTMLInputElement>(null);
+  const focusCustom = useRef(false);
+  useEffect(() => {
+    if (customDuration && focusCustom.current) {
+      customRef.current?.select();
+      focusCustom.current = false;
+    }
+  }, [customDuration]);
   const [location, setLocation] = useState(defaults?.location ?? "");
   const [surfaceSlug, setSurfaceSlug] = useState(defaults?.surfaceSlug ?? "field");
   const [equipment, setEquipment] = useState<string[]>(defaults?.equipmentSlugs ?? DEFAULT_EQUIPMENT);
@@ -95,6 +106,7 @@ export function PlanForm({
     e.preventDefault();
     setError("");
     if (!ageSlug) return setError("Pick an age level.");
+    if (!Number.isInteger(durationMin) || durationMin < 15 || durationMin > 300) return setError("Practice length must be 15–300 minutes.");
     const input: PlanInput = {
       sportSlug,
       teamId: teamId || undefined,
@@ -163,13 +175,43 @@ export function PlanForm({
         <div>
           <label className="label" htmlFor="duration">Length (minutes)</label>
           <div className="flex gap-2">
-            <select id="duration" className="input" value={DURATIONS.includes(durationMin) ? durationMin : "custom"} onChange={(e) => e.target.value !== "custom" && setDurationMin(Number(e.target.value))}>
+            <select
+              id="duration"
+              className="input"
+              value={customDuration ? "custom" : String(durationMin)}
+              onChange={(e) => {
+                if (e.target.value === "custom") {
+                  focusCustom.current = true;
+                  setCustomText(String(durationMin));
+                  setCustomDuration(true);
+                } else {
+                  setCustomDuration(false);
+                  setDurationMin(Number(e.target.value));
+                }
+              }}
+            >
               {DURATIONS.map((d) => (
                 <option key={d} value={d}>{d >= 60 ? `${Math.floor(d / 60)}h${d % 60 ? ` ${d % 60}m` : ""}` : `${d}m`}</option>
               ))}
               <option value="custom">Custom…</option>
             </select>
-            <input type="number" aria-label="Minutes" className="input w-24" min={15} max={300} value={durationMin} onChange={(e) => setDurationMin(Number(e.target.value))} />
+            {customDuration && (
+              <input
+                ref={customRef}
+                type="number"
+                aria-label="Custom minutes"
+                className="input w-24"
+                min={15}
+                max={300}
+                step={5}
+                required
+                value={customText}
+                onChange={(e) => {
+                  setCustomText(e.target.value);
+                  setDurationMin(e.target.value === "" ? NaN : Number(e.target.value));
+                }}
+              />
+            )}
           </div>
         </div>
         <div className="md:col-span-2">

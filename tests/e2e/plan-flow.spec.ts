@@ -94,3 +94,28 @@ test("drill library filters and editing", async ({ page }) => {
   await page.getByLabel("Search drills").fill("pickoff");
   await expect(page.getByTestId("drill-card")).toHaveCount(1);
 });
+
+test("custom practice length", async ({ page }) => {
+  await page.goto("/plans/new");
+  await expect(page.getByLabel("Custom minutes")).toHaveCount(0);
+  await page.getByLabel("Length (minutes)").selectOption("custom");
+  const minutes = page.getByLabel("Custom minutes");
+  await expect(minutes).toBeFocused();
+  await expect(page.getByLabel("Length (minutes)")).toHaveValue("custom");
+  // Typing a preset value stays in custom mode instead of snapping back.
+  await minutes.fill("90");
+  await expect(page.getByLabel("Length (minutes)")).toHaveValue("custom");
+  await minutes.fill("50");
+  await page.getByLabel("Start time").fill("20:00");
+  await page.locator('[data-chip="age:10u"]').click();
+  await page.getByRole("button", { name: "Build practice plan" }).click();
+  await page.waitForURL(/\/plans\/[^/]+$/);
+  await expect(page.getByTestId("plan-document")).toContainText("8-8:50pm");
+  await expect(page.getByTestId("time-total")).toHaveText("50 / 50 min");
+
+  // Switching back to a preset hides the box and uses the preset.
+  await page.goto("/plans/new");
+  await page.getByLabel("Length (minutes)").selectOption("custom");
+  await page.getByLabel("Length (minutes)").selectOption("60");
+  await expect(page.getByLabel("Custom minutes")).toHaveCount(0);
+});
