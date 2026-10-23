@@ -27,12 +27,16 @@ It starts with baseball and softball. The data model is sport-agnostic, so other
 
 ## Quick start
 
+Run these from the folder that contains `package.json`, one line at a time:
+
 ```bash
 npm install
 cp .env.example .env
-npx prisma migrate dev     # creates prisma/dev.db and seeds sports, tags and drills
-npm run dev                # http://localhost:3000
+npx prisma migrate dev
+npm run dev
 ```
+
+`npx prisma migrate dev` creates `prisma/dev.db` and loads the sports, tags and drills. `npm run dev` starts the app at http://localhost:3000.
 
 The seed can be re-run safely (`npm run db:seed`). It only adds drills that don't exist yet, so your edits are never overwritten.
 
@@ -66,9 +70,11 @@ The seed can be re-run safely (`npm run db:seed`). It only adds drills that don'
 ```bash
 npm run typecheck
 npm run lint
-npm test            # unit tests: generator, groups, formatting, exports (with a mocked Drive API)
-npm run build && npm run test:e2e   # Playwright: team → plan → swap → print → .docx, plus the drill library
+npm test
+npm run build && npm run test:e2e
 ```
+
+`npm test` runs the unit tests (generator, groups, formatting, exports with a mocked Drive API). `npm run test:e2e` runs the Playwright tests (team → plan → swap → print → .docx, the drill library, and custom practice length).
 
 E2E runs on a throwaway `prisma/e2e.db` that is recreated each run.
 
