@@ -32,6 +32,28 @@ test("pages and exports need a login", async ({ page }) => {
   await expect(page).toHaveURL(/\/login/);
 });
 
+test("an admin's private drill skips the review queue", async ({ page }) => {
+  await logIn(page, ADMIN.email, ADMIN.password);
+  await page.goto("/drills/new");
+  await page.getByLabel("Name", { exact: true }).fill("Admin Private Drill");
+  await page.getByLabel("Add to the shared library").uncheck();
+  await page.getByRole("button", { name: "Save drill" }).click();
+  await page.waitForURL(/\/drills$/);
+  await page.getByLabel("Search drills").fill("Admin Private Drill");
+  await expect(card(page, "Admin Private Drill").getByTestId("private-badge")).toHaveText("Only you · Private");
+  await page.goto("/admin");
+  await expect(card(page, "Admin Private Drill")).toHaveCount(0);
+
+  // It can still go into the library later.
+  await page.goto("/drills");
+  await page.getByLabel("Search drills").fill("Admin Private Drill");
+  await card(page, "Admin Private Drill").getByRole("link", { name: "Edit" }).click();
+  await page.getByRole("button", { name: "Add to shared library" }).click();
+  await page.waitForURL(/\/drills$/);
+  await page.getByLabel("Search drills").fill("Admin Private Drill");
+  await expect(card(page, "Admin Private Drill").getByTestId("private-badge")).toHaveCount(0);
+});
+
 test("teams and drills are private until an admin approves a drill", async ({ browser }) => {
   const coachA = await (await browser.newContext()).newPage();
   const coachB = await (await browser.newContext()).newPage();

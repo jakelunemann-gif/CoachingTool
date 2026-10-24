@@ -16,7 +16,7 @@ export default async function EditDrillPage({ params, searchParams }: { params: 
       {drill.ownerId && drill.ownerId !== user.id && (
         <p className="text-sm text-slate-600">Submitted by {drill.submittedBy || "a coach"}. Your changes are saved before you approve or reject it.</p>
       )}
-      <DrillForm drill={drill} sports={sports} returnTo={fromReview ? "/admin" : "/drills"} />
+      <DrillForm drill={drill} sports={sports} returnTo={fromReview ? "/admin" : "/drills"} isOwner={!drill.ownerId || drill.ownerId === user.id} canAddToLibrary={user.isAdmin} />
     </div>
   );
 }

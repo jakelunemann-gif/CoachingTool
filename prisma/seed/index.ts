@@ -68,11 +68,6 @@ async function main() {
   }
 
   await prisma.setting.upsert({ where: { key: "defaultSport" }, update: {}, create: { key: "defaultSport", value: "softball" } });
-  await prisma.setting.upsert({
-    where: { key: "driveFolderId" },
-    update: {},
-    create: { key: "driveFolderId", value: "1XUYXzoKOljxwZoVy6q9YKO-kI-QymTMy" },
-  });
 
   // Optional admin account for fresh installs and tests. Without it, the first
   // coach to sign up becomes the admin.

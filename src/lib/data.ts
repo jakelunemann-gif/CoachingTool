@@ -50,9 +50,13 @@ export async function getDrills(userId: string, sportSlug?: string): Promise<Dri
   return rows.map(toDrillLite);
 }
 
-/** A drill the user may edit: their own, or any drill for admins. */
+/** Matches a drill the user may edit: their own, or any drill for admins. */
+export function editableDrillWhere(id: string, user: { id: string; isAdmin: boolean }): Prisma.DrillWhereInput {
+  return { id, ...(user.isAdmin ? {} : { ownerId: user.id }) };
+}
+
 export async function getEditableDrill(id: string, user: { id: string; isAdmin: boolean }): Promise<DrillLite | null> {
-  const row = await prisma.drill.findFirst({ where: { id, ...(user.isAdmin ? {} : { ownerId: user.id }) }, include: drillInclude });
+  const row = await prisma.drill.findFirst({ where: editableDrillWhere(id, user), include: drillInclude });
   return row ? toDrillLite(row) : null;
 }
 

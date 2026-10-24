@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { deleteDrill, resubmitDrill, saveDrill } from "@/app/actions";
+import { deleteDrill, resubmitDrill, saveDrill, shareDrill } from "@/app/actions";
 import { BLOCK_TYPE_LABELS, BLOCK_TYPES, type BlockType, type DrillLite, type SportBundle, type TagKind } from "@/lib/types";
 import { ChipSelect } from "./ChipSelect";
 
@@ -19,10 +19,14 @@ export function DrillForm({
   sports,
   canAddToLibrary = false,
   returnTo = "/drills",
+  isOwner = true,
 }: {
   drill?: DrillLite;
   sports: SportBundle[];
-  // Admins adding a new drill choose between the shared library and private.
+  // False when an admin edits another coach's private drill: the owner's review banner doesn't apply.
+  isOwner?: boolean;
+  // Admins choose between the shared library and private for a new drill,
+  // and can move their own private drills into the library later.
   canAddToLibrary?: boolean;
   returnTo?: string;
 }) {
@@ -95,7 +99,13 @@ export function DrillForm({
 
   return (
     <form onSubmit={submit} className="space-y-5">
-      {drill?.ownerId && <ReviewStatusBanner drill={drill} onResubmit={() => startTransition(async () => { await resubmitDrill(drill.id); router.refresh(); })} />}
+      {drill?.ownerId && isOwner && (
+        <ReviewStatusBanner
+          drill={drill}
+          onResubmit={() => startTransition(async () => { await resubmitDrill(drill.id); router.refresh(); })}
+          onShare={canAddToLibrary ? () => startTransition(async () => { await shareDrill(drill.id); router.push(returnTo); }) : undefined}
+        />
+      )}
       <section className="card grid gap-4 md:grid-cols-3">
         <div className="md:col-span-2">
           <label className="label" htmlFor="name">Name</label>
@@ -203,7 +213,7 @@ export function DrillForm({
   );
 }
 
-function ReviewStatusBanner({ drill, onResubmit }: { drill: DrillLite; onResubmit: () => void }) {
+function ReviewStatusBanner({ drill, onResubmit, onShare }: { drill: DrillLite; onResubmit: () => void; onShare?: () => void }) {
   if (drill.reviewStatus === "PENDING") {
     return <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-900">Private drill · waiting for an admin to review it for the shared library.</p>;
   }
@@ -217,5 +227,10 @@ function ReviewStatusBanner({ drill, onResubmit }: { drill: DrillLite; onResubmi
       </div>
     );
   }
-  return <p className="rounded-md bg-slate-100 p-3 text-sm text-slate-700">Private drill · only you can see it.</p>;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-slate-100 p-3 text-sm text-slate-700">
+      <span>Private drill · only you can see it.</span>
+      {onShare && <button type="button" className="btn btn-sm" onClick={onShare}>Add to shared library</button>}
+    </div>
+  );
 }

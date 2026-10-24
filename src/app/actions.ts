@@ -5,8 +5,8 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createAccount, MIN_PASSWORD_LENGTH, normalizeEmail } from "@/lib/auth/accounts";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
-import { endSession, requireAdmin, requireUser, startSession, type CurrentUser } from "@/lib/auth/session";
-import { getDrills, getSport, getTeamHistory } from "@/lib/data";
+import { endOtherSessions, endSession, requireAdmin, requireUser, startSession, type CurrentUser } from "@/lib/auth/session";
+import { editableDrillWhere, getDrills, getSport, getTeamHistory } from "@/lib/data";
 import { prisma } from "@/lib/db";
 import { planTitle } from "@/lib/format";
 import { generatePlan } from "@/lib/generator";
@@ -23,9 +23,18 @@ export interface AuthFormState {
 }
 
 // Only same-site paths, so a crafted ?next= can't send someone off-site.
+// Parsed the way a browser would (tabs/newlines stripped, backslashes as
+// slashes) rather than prefix-checked, so "/\t/evil.com" can't slip through.
 const safeNext = (value: FormDataEntryValue | null) => {
   const next = typeof value === "string" ? value : "";
-  return next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : "/";
+  if (!next.startsWith("/")) return "/";
+  const base = "http://same-site.invalid";
+  try {
+    const url = new URL(next, base);
+    return url.origin === base ? url.pathname + url.search + url.hash : "/";
+  } catch {
+    return "/";
+  }
 };
 
 const signUpSchema = z.object({
@@ -73,6 +82,7 @@ export async function changePassword(current: string, next: string): Promise<{ e
   const user = await prisma.user.findUniqueOrThrow({ where: { id: me.id } });
   if (!(await verifyPassword(current, user.passwordHash))) return { error: "Your current password isn't right." };
   await prisma.user.update({ where: { id: me.id }, data: { passwordHash: await hashPassword(next) } });
+  await endOtherSessions(me.id);
   return {};
 }
 
@@ -194,7 +204,7 @@ export type DrillFormValues = z.infer<typeof drillSchema>;
 
 // Coaches can change their own drills; admins can change any drill.
 async function findEditableDrill(id: string, user: CurrentUser) {
-  return prisma.drill.findFirst({ where: { id, ...(user.isAdmin ? {} : { ownerId: user.id }) } });
+  return prisma.drill.findFirst({ where: editableDrillWhere(id, user), select: { id: true } });
 }
 
 function revalidateDrills() {
@@ -228,6 +238,7 @@ export async function saveDrill(raw: DrillFormValues): Promise<{ id?: string; er
   const videos = v.videos.filter((x) => x.url).map((x, i) => ({ url: x.url, label: x.label, sortOrder: i }));
   if (v.id && !(await findEditableDrill(v.id, user))) return { error: "You can only edit your own drills." };
   // A coach's new drill is private to them and waits in the admin review queue.
+  // An admin's goes to the library, or stays private without queueing.
   const toLibrary = user.isAdmin && v.addToLibrary;
   const drill = v.id
     ? await prisma.drill.update({
@@ -239,7 +250,7 @@ export async function saveDrill(raw: DrillFormValues): Promise<{ id?: string; er
           ...data,
           ownerId: toLibrary ? null : user.id,
           submittedById: user.id,
-          reviewStatus: toLibrary ? "" : "PENDING",
+          reviewStatus: user.isAdmin ? "" : "PENDING",
           sports: { connect: sports },
           tags: { connect: v.tagIds.map((id) => ({ id })) },
           videos: { create: videos },
@@ -272,6 +283,13 @@ export async function approveDrill(id: string) {
     where: { id, reviewStatus: "PENDING" },
     data: { ownerId: null, reviewStatus: "APPROVED", reviewNote: "", reviewedAt: new Date() },
   });
+  revalidateDrills();
+}
+
+/** Moves an admin's own private drill into the shared library. */
+export async function shareDrill(id: string) {
+  const user = await requireAdmin();
+  await prisma.drill.update({ where: { id, ownerId: user.id, reviewStatus: "" }, data: { ownerId: null } });
   revalidateDrills();
 }
 
@@ -312,6 +330,9 @@ export async function saveTeam(raw: TeamFormValues): Promise<{ id?: string; erro
   const v = parsed.data;
   const sport = await prisma.sport.findUniqueOrThrow({ where: { slug: v.sportSlug } });
   const base = { name: v.name, sportId: sport.id, ageSlug: v.ageSlug, skillSlug: v.skillSlug, season: v.season };
+  if (v.id && !(await prisma.team.findFirst({ where: { id: v.id, userId: user.id }, select: { id: true } }))) {
+    return { error: "That team no longer exists. Reload the page." };
+  }
   const team = await prisma.$transaction(async (tx) => {
     const t = v.id
       ? await tx.team.update({ where: { id: v.id, userId: user.id }, data: base })
