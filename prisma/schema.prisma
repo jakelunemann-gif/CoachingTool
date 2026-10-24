@@ -10,6 +10,37 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// A coach's login. Teams, plans, coaches, locations and private drills
+// belong to a user; library drills (ownerId null) are shared by everyone.
+model User {
+  id            String        @id @default(cuid())
+  email         String        @unique
+  name          String
+  passwordHash  String
+  // COACH | ADMIN. Admins review submitted drills and manage the library.
+  role          String        @default("COACH")
+  defaultSport  String        @default("")
+  driveFolderId String        @default("")
+  sessions      UserSession[]
+  teams         Team[]
+  plans         Plan[]
+  coaches       Coach[]
+  locations     Location[]
+  drills        Drill[]       @relation("OwnedDrills")
+  submissions   Drill[]       @relation("SubmittedDrills")
+  createdAt     DateTime      @default(now())
+}
+
+model UserSession {
+  id        String   @id @default(cuid())
+  // sha256 of the cookie value, so a leaked database can't be replayed.
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
 model Sport {
   id       String  @id @default(cuid())
   slug     String  @unique
@@ -53,6 +84,16 @@ model Drill {
   maxPlayers      Int?
   // Free-form provenance, e.g. "Coach plans 2024-2026" or "needs review".
   source          String       @default("")
+  // Null means the drill is in the shared library. Otherwise only the owner
+  // sees it until an admin approves it, which clears the owner.
+  ownerId         String?
+  owner           User?        @relation("OwnedDrills", fields: [ownerId], references: [id], onDelete: Cascade)
+  submittedById   String?
+  submittedBy     User?        @relation("SubmittedDrills", fields: [submittedById], references: [id], onDelete: SetNull)
+  // "" (added straight to the library) | PENDING | APPROVED | REJECTED
+  reviewStatus    String       @default("")
+  reviewNote      String       @default("")
+  reviewedAt      DateTime?
   sports          Sport[]
   // Age/skill/focus/surface tags say where the drill fits; equipment tags
   // are what it requires. An empty age or surface list means "any".
@@ -73,6 +114,9 @@ model DrillVideo {
 
 model Team {
   id        String   @id @default(cuid())
+  // Null only for rows created before accounts existed; the first account claims them.
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   name      String
   sportId   String
   sport     Sport    @relation(fields: [sportId], references: [id])
@@ -97,14 +141,22 @@ model Player {
 
 model Coach {
   id     String  @id @default(cuid())
-  name   String  @unique
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name   String
   active Boolean @default(true)
+
+  @@unique([userId, name])
 }
 
 model Location {
-  id          String @id @default(cuid())
-  name        String @unique
-  surfaceSlug String @default("")
+  id          String  @id @default(cuid())
+  userId      String?
+  user        User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  surfaceSlug String  @default("")
+
+  @@unique([userId, name])
 }
 
 model Setting {
@@ -114,6 +166,8 @@ model Setting {
 
 model Plan {
   id          String   @id @default(cuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   title       String
   sportId     String
   sport       Sport    @relation(fields: [sportId], references: [id])

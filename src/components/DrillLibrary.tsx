@@ -17,7 +17,32 @@ export function ageRange(ages: string[], order: { slug: string; label: string }[
   return idx[idx.length - 1] === order.length - 1 ? `${label(idx[0])}+` : `${label(idx[0])}–${label(idx[idx.length - 1])}`;
 }
 
-function DrillCard({ drill, sport }: { drill: DrillLite; sport: SportBundle }) {
+function ReviewBadge({ drill }: { drill: DrillLite }) {
+  if (!drill.ownerId) {
+    return drill.reviewStatus === "APPROVED" && drill.submittedBy ? <span className="text-[11px] text-slate-500">Shared by {drill.submittedBy}</span> : null;
+  }
+  const status =
+    drill.reviewStatus === "PENDING" ? "Waiting for review" : drill.reviewStatus === "REJECTED" ? "Not added to library" : "Private";
+  return (
+    <span className="w-fit rounded bg-violet-100 px-1.5 py-0.5 text-[11px] font-medium text-violet-800" data-testid="private-badge" title={drill.reviewNote || undefined}>
+      Only you · {status}
+    </span>
+  );
+}
+
+export function DrillCard({
+  drill,
+  sport,
+  editHref,
+  showReviewBadge = true,
+  children,
+}: {
+  drill: DrillLite;
+  sport: SportBundle;
+  editHref?: string;
+  showReviewBadge?: boolean;
+  children?: React.ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const [playing, setPlaying] = useState(false);
   const label = (kind: "FOCUS" | "EQUIPMENT" | "SURFACE", slug: string) => sport.tags[kind].find((t) => t.slug === slug)?.label ?? slug;
@@ -32,8 +57,9 @@ function DrillCard({ drill, sport }: { drill: DrillLite; sport: SportBundle }) {
             {BLOCK_TYPE_LABELS[drill.blockType]} · {drill.durationTypical} min ({drill.durationMin}–{drill.durationMax}) · {drill.coachesRequired} coach{drill.coachesRequired === 1 ? "" : "es"} · {ageRange(drill.ages, sport.tags.AGE)}
           </p>
         </div>
-        <Link href={`/drills/${drill.id}`} className="btn btn-sm shrink-0">Edit</Link>
+        {editHref && <Link href={editHref} className="btn btn-sm shrink-0">Edit</Link>}
       </div>
+      {showReviewBadge && <ReviewBadge drill={drill} />}
       {drill.source === "needs review" && <span className="w-fit rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">Needs review: check the description</span>}
       {drill.description && <p className="text-sm text-slate-700">{drill.description}</p>}
       <div className="flex flex-wrap gap-1">
@@ -79,11 +105,12 @@ function DrillCard({ drill, sport }: { drill: DrillLite; sport: SportBundle }) {
           ))}
         </ul>
       )}
+      {children}
     </article>
   );
 }
 
-export function DrillLibrary({ drills, sports }: { drills: DrillLite[]; sports: SportBundle[] }) {
+export function DrillLibrary({ drills, sports, isAdmin }: { drills: DrillLite[]; sports: SportBundle[]; isAdmin: boolean }) {
   const [sportSlug, setSportSlug] = useState(sports[0]?.slug ?? "");
   const sport = sports.find((s) => s.slug === sportSlug) ?? sports[0];
   const [q, setQ] = useState("");
@@ -93,6 +120,7 @@ export function DrillLibrary({ drills, sports }: { drills: DrillLite[]; sports: 
   const [blockType, setBlockType] = useState("");
   const [coaches, setCoaches] = useState("");
   const [videoOnly, setVideoOnly] = useState(false);
+  const [scope, setScope] = useState<"" | "library" | "mine">("");
 
   const filtered = useMemo(() => {
     const text = q.trim().toLowerCase();
@@ -105,9 +133,10 @@ export function DrillLibrary({ drills, sports }: { drills: DrillLite[]; sports: 
         (!surface || d.surfaces.length === 0 || d.surfaces.includes(surface)) &&
         (!blockType || d.blockType === blockType) &&
         (!coaches || d.coachesRequired <= Number(coaches)) &&
-        (!videoOnly || d.videos.length > 0),
+        (!videoOnly || d.videos.length > 0) &&
+        (!scope || (scope === "mine") === Boolean(d.ownerId)),
     );
-  }, [drills, sportSlug, q, age, focus, surface, blockType, coaches, videoOnly]);
+  }, [drills, sportSlug, q, age, focus, surface, blockType, coaches, videoOnly, scope]);
 
   if (!sport) return null;
   return (
@@ -146,6 +175,11 @@ export function DrillLibrary({ drills, sports }: { drills: DrillLite[]; sports: 
               <option key={n} value={n}>≤ {n} coach{n === 1 ? "" : "es"}</option>
             ))}
           </select>
+          <select className="input" value={scope} onChange={(e) => setScope(e.target.value as typeof scope)} aria-label="Show">
+            <option value="">Library + my drills</option>
+            <option value="library">Shared library</option>
+            <option value="mine">My private drills</option>
+          </select>
           <label className="flex items-center gap-1.5 text-sm">
             <input type="checkbox" checked={videoOnly} onChange={(e) => setVideoOnly(e.target.checked)} /> Has video
           </label>
@@ -155,7 +189,7 @@ export function DrillLibrary({ drills, sports }: { drills: DrillLite[]; sports: 
       <p className="text-sm text-slate-600">{filtered.length} drills</p>
       <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
         {filtered.map((d) => (
-          <DrillCard key={d.id} drill={d} sport={sport} />
+          <DrillCard key={d.id} drill={d} sport={sport} editHref={isAdmin || d.ownerId ? `/drills/${d.id}` : undefined} />
         ))}
       </div>
     </div>

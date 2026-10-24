@@ -1,9 +1,14 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "./db";
-import type { BlockType, DrillLite, PlanInput, PlanItem, SportBundle, SportConfig, TagKind, TeamWithPlayers } from "./types";
+import type { BlockType, DrillLite, PlanInput, PlanItem, ReviewStatus, SportBundle, SportConfig, TagKind, TeamWithPlayers } from "./types";
 
-const drillInclude = { sports: true, tags: true, videos: { orderBy: { sortOrder: "asc" } } } satisfies Prisma.DrillInclude;
+const drillInclude = {
+  sports: true,
+  tags: true,
+  videos: { orderBy: { sortOrder: "asc" } },
+  submittedBy: { select: { name: true } },
+} satisfies Prisma.DrillInclude;
 type DrillRow = Prisma.DrillGetPayload<{ include: typeof drillInclude }>;
 
 export function toDrillLite(d: DrillRow): DrillLite {
@@ -28,29 +33,43 @@ export function toDrillLite(d: DrillRow): DrillLite {
     surfaces: slugs("SURFACE"),
     equipment: slugs("EQUIPMENT"),
     videos: d.videos.map((v) => ({ url: v.url, label: v.label })),
+    ownerId: d.ownerId,
+    reviewStatus: d.reviewStatus as ReviewStatus,
+    reviewNote: d.reviewNote,
+    submittedBy: d.submittedBy?.name ?? "",
   };
 }
 
-export async function getDrills(sportSlug?: string): Promise<DrillLite[]> {
+/** Library drills plus the user's own private drills. */
+export async function getDrills(userId: string, sportSlug?: string): Promise<DrillLite[]> {
   const rows = await prisma.drill.findMany({
-    where: sportSlug ? { sports: { some: { slug: sportSlug } } } : undefined,
+    where: { OR: [{ ownerId: null }, { ownerId: userId }], ...(sportSlug ? { sports: { some: { slug: sportSlug } } } : {}) },
     include: drillInclude,
     orderBy: { name: "asc" },
   });
   return rows.map(toDrillLite);
 }
 
-export async function getDrill(id: string): Promise<DrillLite | null> {
-  const row = await prisma.drill.findUnique({ where: { id }, include: drillInclude });
+/** A drill the user may edit: their own, or any drill for admins. */
+export async function getEditableDrill(id: string, user: { id: string; isAdmin: boolean }): Promise<DrillLite | null> {
+  const row = await prisma.drill.findFirst({ where: { id, ...(user.isAdmin ? {} : { ownerId: user.id }) }, include: drillInclude });
   return row ? toDrillLite(row) : null;
 }
 
-export async function getSports(): Promise<SportBundle[]> {
-  const [sports, tags, defaultSport] = await Promise.all([
+/** Drills waiting for an admin, oldest first. */
+export async function getPendingDrills(): Promise<DrillLite[]> {
+  const rows = await prisma.drill.findMany({ where: { reviewStatus: "PENDING" }, include: drillInclude, orderBy: { createdAt: "asc" } });
+  return rows.map(toDrillLite);
+}
+
+/** Sports with their tags. The user's default sport (or the site default) is listed first. */
+export async function getSports(user?: { defaultSport: string }): Promise<SportBundle[]> {
+  const [sports, tags, siteDefault] = await Promise.all([
     prisma.sport.findMany({ orderBy: { name: "asc" } }),
     prisma.tag.findMany({ orderBy: { sortOrder: "asc" } }),
     getSetting("defaultSport"),
   ]);
+  const defaultSport = user?.defaultSport || siteDefault;
   // The default sport is listed first so forms preselect it.
   sports.sort((a, b) => Number(b.slug === defaultSport) - Number(a.slug === defaultSport));
   return sports.map((s) => {
@@ -95,8 +114,8 @@ export interface PlanRecord {
   updatedAt: string;
 }
 
-export async function getPlan(id: string): Promise<PlanRecord | null> {
-  const p = await prisma.plan.findUnique({ where: { id }, include: { sport: true } });
+export async function getPlan(id: string, userId: string): Promise<PlanRecord | null> {
+  const p = await prisma.plan.findFirst({ where: { id, userId }, include: { sport: true } });
   if (!p) return null;
   return {
     id: p.id,
@@ -138,8 +157,9 @@ export async function getTeamHistory(teamId: string | undefined, excludePlanId?:
   return { recentDrillIds: ids, recentLeaders: plans.map((p) => p.teamLeader).filter(Boolean) };
 }
 
-export async function getTeams(): Promise<TeamWithPlayers[]> {
+export async function getTeams(userId: string): Promise<TeamWithPlayers[]> {
   const teams = await prisma.team.findMany({
+    where: { userId },
     include: { sport: true, players: { orderBy: { sortOrder: "asc" } } },
     orderBy: { name: "asc" },
   });

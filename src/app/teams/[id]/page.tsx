@@ -1,12 +1,14 @@
 import { notFound } from "next/navigation";
 import { TeamEditor } from "@/components/TeamEditor";
+import { requireUser } from "@/lib/auth/session";
 import { getSports, getTeams } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
 export default async function TeamPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [teams, sports] = await Promise.all([getTeams(), getSports()]);
+  const user = await requireUser();
+  const [teams, sports] = await Promise.all([getTeams(user.id), getSports(user)]);
   const team = teams.find((t) => t.id === id);
   if (!team) notFound();
   return (

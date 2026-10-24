@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { createAccount, normalizeEmail } from "../../src/lib/auth/accounts";
 import { DRILLS } from "./drills";
 import { SPORTS } from "./sports";
 import { TAGS } from "./tags";
@@ -35,7 +36,8 @@ async function main() {
 
   let created = 0;
   for (const d of DRILLS) {
-    if (await prisma.drill.findFirst({ where: { name: d.name } })) continue;
+    // Only library drills count: a coach's private drill with the same name doesn't block it.
+    if (await prisma.drill.findFirst({ where: { name: d.name, ownerId: null } })) continue;
     const sports = d.sports ?? ["softball", "baseball"];
     await prisma.drill.create({
       data: {
@@ -71,6 +73,15 @@ async function main() {
     update: {},
     create: { key: "driveFolderId", value: "1XUYXzoKOljxwZoVy6q9YKO-kI-QymTMy" },
   });
+
+  // Optional admin account for fresh installs and tests. Without it, the first
+  // coach to sign up becomes the admin.
+  const adminEmail = process.env.SEED_ADMIN_EMAIL;
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+  if (adminEmail && adminPassword && !(await prisma.user.findUnique({ where: { email: normalizeEmail(adminEmail) } }))) {
+    await createAccount(prisma, { email: adminEmail, password: adminPassword, name: process.env.SEED_ADMIN_NAME || "Admin", admin: true });
+    console.log(`Created admin account ${adminEmail}.`);
+  }
 
   console.log(`Seeded ${SPORTS.length} sports, ${TAGS.length} tags, ${created} new drills (${DRILLS.length} in seed file).`);
 }

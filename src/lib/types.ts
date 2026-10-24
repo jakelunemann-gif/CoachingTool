@@ -68,6 +68,9 @@ export interface SportConfig {
   };
 }
 
+// "" means the drill went straight into the library (seeded or added by an admin).
+export type ReviewStatus = "" | "PENDING" | "APPROVED" | "REJECTED";
+
 export interface DrillVideoLite {
   url: string;
   label: string;
@@ -93,6 +96,12 @@ export interface DrillLite {
   surfaces: string[];
   equipment: string[];
   videos: DrillVideoLite[];
+  // Library drills have no owner. The generator ignores the fields below, so
+  // tests and fixtures can leave them out.
+  ownerId?: string | null;
+  reviewStatus?: ReviewStatus;
+  reviewNote?: string;
+  submittedBy?: string;
 }
 
 export interface RosterPlayer {

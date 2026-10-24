@@ -2,7 +2,7 @@
 
 import { signIn, signOut } from "next-auth/react";
 import { useState, useTransition } from "react";
-import { addCoach, addLocation, addTag, removeCoach, removeLocation, setSetting } from "@/app/actions";
+import { addCoach, addLocation, addTag, changePassword, removeCoach, removeLocation, setUserPreference } from "@/app/actions";
 import type { SportBundle, TagKind } from "@/lib/types";
 
 export function CoachesForm({ coaches }: { coaches: { id: string; name: string }[] }) {
@@ -62,7 +62,7 @@ export function DriveSettings({ folderId, googleConfigured, signedInAs }: { fold
   const parsed = value.match(/folders\/([\w-]+)/)?.[1] ?? value.trim();
   return (
     <div className="space-y-3 text-sm">
-      <form className="flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); start(async () => { await setSetting("driveFolderId", parsed); setValue(parsed); setSaved(true); }); }}>
+      <form className="flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); start(async () => { await setUserPreference("driveFolderId", parsed); setValue(parsed); setSaved(true); }); }}>
         <input className="input max-w-md" value={value} onChange={(e) => { setValue(e.target.value); setSaved(false); }} placeholder="Folder link or ID" aria-label="Drive folder" />
         <button className="btn" disabled={pending}>Save folder</button>
         {saved && <span className="self-center text-emerald-700">Saved</span>}
@@ -117,11 +117,36 @@ export function DefaultSportForm({ sports }: { sports: SportBundle[] }) {
       defaultValue={sports[0]?.slug}
       disabled={pending}
       aria-label="Default sport"
-      onChange={(e) => start(() => setSetting("defaultSport", e.target.value))}
+      onChange={(e) => start(() => setUserPreference("defaultSport", e.target.value))}
     >
       {sports.map((s) => (
         <option key={s.slug} value={s.slug}>{s.name}</option>
       ))}
     </select>
+  );
+}
+
+export function PasswordForm() {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [message, setMessage] = useState<{ ok: boolean; text: string }>();
+  const [pending, start] = useTransition();
+  return (
+    <form
+      className="flex flex-wrap gap-2 text-sm"
+      onSubmit={(e) => {
+        e.preventDefault();
+        start(async () => {
+          const res = await changePassword(current, next);
+          setMessage(res.error ? { ok: false, text: res.error } : { ok: true, text: "Password changed" });
+          if (!res.error) { setCurrent(""); setNext(""); }
+        });
+      }}
+    >
+      <input type="password" className="input w-48" placeholder="Current password" value={current} onChange={(e) => setCurrent(e.target.value)} aria-label="Current password" autoComplete="current-password" />
+      <input type="password" className="input w-48" placeholder="New password" value={next} onChange={(e) => setNext(e.target.value)} aria-label="New password" autoComplete="new-password" />
+      <button className="btn" disabled={pending || !current || !next}>Change password</button>
+      {message && <span className={`self-center ${message.ok ? "text-emerald-700" : "text-red-700"}`}>{message.text}</span>}
+    </form>
   );
 }

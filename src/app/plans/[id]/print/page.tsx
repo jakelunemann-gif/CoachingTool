@@ -1,13 +1,15 @@
 import { notFound } from "next/navigation";
 import { PlanDocument } from "@/components/PlanDocument";
 import { PrintButton } from "@/components/PrintButton";
+import { requireUser } from "@/lib/auth/session";
 import { getPlan } from "@/lib/data";
 import { planToDocModel } from "@/lib/export/docModel";
 
 export const dynamic = "force-dynamic";
 
 export default async function PrintPage({ params }: { params: Promise<{ id: string }> }) {
-  const plan = await getPlan((await params).id);
+  const user = await requireUser();
+  const plan = await getPlan((await params).id, user.id);
   if (!plan) notFound();
   return (
     <div className="mx-auto max-w-3xl">
