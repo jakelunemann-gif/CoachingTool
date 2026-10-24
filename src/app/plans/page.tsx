@@ -1,11 +1,14 @@
 import Link from "next/link";
+import { requireUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import { formatDateLong, formatTimeRange } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
 export default async function PlansPage() {
+  const user = await requireUser();
   const plans = await prisma.plan.findMany({
+    where: { userId: user.id },
     orderBy: [{ date: "desc" }, { createdAt: "desc" }],
     include: { team: { select: { name: true } } },
   });

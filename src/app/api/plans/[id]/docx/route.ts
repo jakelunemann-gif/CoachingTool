@@ -1,9 +1,12 @@
+import { getCurrentUser } from "@/lib/auth/session";
 import { getPlan } from "@/lib/data";
 import { docToDocx } from "@/lib/export/docx";
 import { planToDocModel } from "@/lib/export/docModel";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const plan = await getPlan((await params).id);
+  const user = await getCurrentUser();
+  if (!user) return new Response("Log in first", { status: 401 });
+  const plan = await getPlan((await params).id, user.id);
   if (!plan) return new Response("Plan not found", { status: 404 });
   const buf = await docToDocx(planToDocModel(plan));
   const filename = `${plan.title.replace(/[^\w .-]/g, "")}.docx`;

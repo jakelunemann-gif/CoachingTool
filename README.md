@@ -9,6 +9,12 @@ It starts with baseball and softball. The data model is sport-agnostic, so other
 
 ## Features
 
+- **Coach accounts**: every coach logs in with their own email and password. Teams, plans, saved coaches, saved locations, the Drive folder and the default sport belong to that coach, and other coaches can't see them.
+- **Shared drill library with review**:
+  - Everyone plans from the shared library.
+  - A drill a coach adds is private to them right away and can be used in their plans. It also goes into the admin's review queue.
+  - Admins approve it into the shared library, or reject it with a note. A rejected drill stays private to that coach, who can update it and resubmit it.
+  - Only admins can edit shared library drills and add tags.
 - **Plan form**: date, start time, length, location, playing surface, team, age and level, attendance (from a roster or a player count), coaches present, available equipment, focus areas (pick several), notes, and options for intro, dailies, side work and end game.
 - **Auto-fill**: picks drills that fit the age, surface, equipment, number of coaches and number of players.
   - Spreads drills across the selected focus areas and avoids drills from the team's last few plans.
@@ -38,7 +44,20 @@ npm run dev
 
 `npx prisma migrate dev` creates `prisma/dev.db` and loads the sports, tags and drills. `npm run dev` starts the app at http://localhost:3000.
 
+Open the app and click **Create an account**. The first account becomes the admin.
+
 The seed can be re-run safely (`npm run db:seed`). It only adds drills that don't exist yet, so your edits are never overwritten.
+
+## Accounts and admins
+
+- **First account.** The first account created is an admin.
+  - Upgrading an install from before accounts existed? The first account also takes over the teams, plans, coaches, locations and Drive folder already saved.
+  - To create the admin from the command line instead, set `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD` (and optionally `SEED_ADMIN_NAME`), then run `npm run db:seed`.
+- **More admins.** Admins can make other coaches admins on the **Admin** page. Emails listed in `ADMIN_EMAILS` (comma-separated) are admins as soon as they sign up.
+- **Limit who can sign up.** Anyone who can reach the app can create an account. To limit that, set `SIGNUP_CODE` and give the code to your coaches.
+- **Passwords.** Coaches change their password in **Settings**. There's no email reset yet.
+
+Logins use the app's own session cookie, stored in the `UserSession` table. Connecting Google Drive is a separate sign-in that's only used for saving docs.
 
 ## Google Drive setup (optional)
 
@@ -58,7 +77,7 @@ The seed can be re-run safely (`npm run db:seed`). It only adds drills that don'
    NEXTAUTH_URL=http://localhost:3000
    ```
 5. **Folder access.** The default `drive.file` scope only lets the app write into folders it can see. To save straight into your existing plans folder, add `GOOGLE_DRIVE_SCOPE=drive` to `.env`. That's fine for a personal app in Testing mode. If the folder isn't reachable, the doc goes to My Drive and the app tells you.
-6. In **Settings**, paste the folder link (the seed preselects your practice plans folder), then click **Connect Google Drive**.
+6. In **Settings**, paste the folder link, then click **Connect Google Drive**. Each coach sets their own folder. The first account gets the folder from before accounts existed.
 
 ## Hosting
 
@@ -74,9 +93,9 @@ npm test
 npm run build && npm run test:e2e
 ```
 
-`npm test` runs the unit tests (generator, groups, formatting, exports with a mocked Drive API). `npm run test:e2e` runs the Playwright tests (team → plan → swap → print → .docx, the drill library, and custom practice length).
+`npm test` runs the unit tests (generator, groups, formatting, password hashing, exports with a mocked Drive API). `npm run test:e2e` runs the Playwright tests (team → plan → swap → print → .docx, the drill library, custom practice length, logins, and private drills going through admin review).
 
-E2E runs on a throwaway `prisma/e2e.db` that is recreated each run.
+E2E runs on a throwaway `prisma/e2e.db` that is recreated each run and seeded with an admin account. Each test signs up its own coach.
 
 ## Adding another sport
 
@@ -96,10 +115,12 @@ New tags can also be added from the Settings page.
 ## Project layout
 
 ```
-prisma/schema.prisma          Sport, Tag, Drill, DrillVideo, Team, Player, Coach, Location, Setting, Plan
+prisma/schema.prisma          User, UserSession, Sport, Tag, Drill, DrillVideo, Team, Player, Coach, Location, Setting, Plan
 prisma/seed/                  sports, tags, and the starter drill library
 src/lib/generator/            pure plan generator (filter, groups, timeline) + tests
 src/lib/export/               shared outline model → HTML / .docx / Google Doc
+src/lib/auth/                 coach logins (password hashing, sessions) and the Google sign-in for Drive
+src/middleware.ts             sends logged-out visitors to /login
 src/app/                      pages, server actions, API routes (docx, drive, auth)
-src/components/               PlanForm, PlanEditor, PlanDocument, DrillLibrary, DrillForm, TeamEditor
+src/components/               PlanForm, PlanEditor, PlanDocument, DrillLibrary, DrillForm, ReviewQueue, TeamEditor
 ```

@@ -1,15 +1,18 @@
 import Link from "next/link";
+import { requireUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import { formatDateLong } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
+  const user = await requireUser();
+  const mine = { userId: user.id };
   const [plans, drillCount, teamCount, planCount] = await Promise.all([
-    prisma.plan.findMany({ orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 6, select: { id: true, title: true, date: true, location: true } }),
-    prisma.drill.count(),
-    prisma.team.count(),
-    prisma.plan.count(),
+    prisma.plan.findMany({ where: mine, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 6, select: { id: true, title: true, date: true, location: true } }),
+    prisma.drill.count({ where: { OR: [{ ownerId: null }, { ownerId: user.id }] } }),
+    prisma.team.count({ where: mine }),
+    prisma.plan.count({ where: mine }),
   ]);
   return (
     <div className="space-y-6">

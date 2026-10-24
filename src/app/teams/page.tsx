@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { TeamEditor } from "@/components/TeamEditor";
+import { requireUser } from "@/lib/auth/session";
 import { getSports, getTeams } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
 export default async function TeamsPage() {
-  const [teams, sports] = await Promise.all([getTeams(), getSports()]);
+  const user = await requireUser();
+  const [teams, sports] = await Promise.all([getTeams(user.id), getSports(user)]);
   const label = (sportSlug: string, kind: "AGE" | "SKILL", slug: string) =>
     sports.find((s) => s.slug === sportSlug)?.tags[kind].find((t) => t.slug === slug)?.label ?? "";
   return (

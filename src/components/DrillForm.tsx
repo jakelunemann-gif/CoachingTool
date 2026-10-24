@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { deleteDrill, saveDrill } from "@/app/actions";
+import { deleteDrill, resubmitDrill, saveDrill, shareDrill } from "@/app/actions";
 import { BLOCK_TYPE_LABELS, BLOCK_TYPES, type BlockType, type DrillLite, type SportBundle, type TagKind } from "@/lib/types";
 import { ChipSelect } from "./ChipSelect";
 
@@ -14,7 +14,22 @@ const TAG_SECTIONS: { kind: TagKind; label: string; hint: string }[] = [
   { kind: "EQUIPMENT", label: "Required equipment", hint: "Only suggested when all of these are available" },
 ];
 
-export function DrillForm({ drill, sports }: { drill?: DrillLite; sports: SportBundle[] }) {
+export function DrillForm({
+  drill,
+  sports,
+  canAddToLibrary = false,
+  returnTo = "/drills",
+  isOwner = true,
+}: {
+  drill?: DrillLite;
+  sports: SportBundle[];
+  // False when an admin edits another coach's private drill: the owner's review banner doesn't apply.
+  isOwner?: boolean;
+  // Admins choose between the shared library and private for a new drill,
+  // and can move their own private drills into the library later.
+  canAddToLibrary?: boolean;
+  returnTo?: string;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState("");
@@ -31,6 +46,7 @@ export function DrillForm({ drill, sports }: { drill?: DrillLite; sports: SportB
   const [source, setSource] = useState(drill?.source ?? "");
   const [sportSlugs, setSportSlugs] = useState<string[]>(drill?.sports ?? sports.map((s) => s.slug));
   const [videos, setVideos] = useState(drill?.videos.length ? drill.videos : [{ url: "", label: "" }]);
+  const [addToLibrary, setAddToLibrary] = useState(canAddToLibrary);
 
   // Tags available for the selected sports (deduplicated by id).
   const tagsFor = (kind: TagKind) => {
@@ -67,9 +83,10 @@ export function DrillForm({ drill, sports }: { drill?: DrillLite; sports: SportB
         sportSlugs,
         tagIds,
         videos: videos.filter((v) => v.url.trim()),
+        addToLibrary: !drill && addToLibrary,
       });
       if (res.error) setError(res.error);
-      else router.push("/drills");
+      else router.push(returnTo);
     });
   };
 
@@ -82,6 +99,13 @@ export function DrillForm({ drill, sports }: { drill?: DrillLite; sports: SportB
 
   return (
     <form onSubmit={submit} className="space-y-5">
+      {drill?.ownerId && isOwner && (
+        <ReviewStatusBanner
+          drill={drill}
+          onResubmit={() => startTransition(async () => { await resubmitDrill(drill.id); router.refresh(); })}
+          onShare={canAddToLibrary ? () => startTransition(async () => { await shareDrill(drill.id); router.push(returnTo); }) : undefined}
+        />
+      )}
       <section className="card grid gap-4 md:grid-cols-3">
         <div className="md:col-span-2">
           <label className="label" htmlFor="name">Name</label>
@@ -158,6 +182,12 @@ export function DrillForm({ drill, sports }: { drill?: DrillLite; sports: SportB
         </div>
       </section>
 
+      {!drill && canAddToLibrary && (
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={addToLibrary} onChange={(e) => setAddToLibrary(e.target.checked)} />
+          Add to the shared library (uncheck to keep it private)
+        </label>
+      )}
       {error && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       <div className="flex justify-between">
         {drill ? (
@@ -168,7 +198,7 @@ export function DrillForm({ drill, sports }: { drill?: DrillLite; sports: SportB
               confirm(`Delete "${drill.name}"?`) &&
               startTransition(async () => {
                 await deleteDrill(drill.id);
-                router.push("/drills");
+                router.push(returnTo);
               })
             }
           >
@@ -180,5 +210,27 @@ export function DrillForm({ drill, sports }: { drill?: DrillLite; sports: SportB
         <button type="submit" className="btn btn-primary" disabled={pending}>{pending ? "Saving…" : "Save drill"}</button>
       </div>
     </form>
+  );
+}
+
+function ReviewStatusBanner({ drill, onResubmit, onShare }: { drill: DrillLite; onResubmit: () => void; onShare?: () => void }) {
+  if (drill.reviewStatus === "PENDING") {
+    return <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-900">Private drill · waiting for an admin to review it for the shared library.</p>;
+  }
+  if (drill.reviewStatus === "REJECTED") {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-slate-100 p-3 text-sm text-slate-700">
+        <span>
+          Private drill · not added to the shared library{drill.reviewNote ? `: “${drill.reviewNote}”` : "."} You can still use it in your plans.
+        </span>
+        <button type="button" className="btn btn-sm" onClick={onResubmit}>Resubmit for review</button>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-slate-100 p-3 text-sm text-slate-700">
+      <span>Private drill · only you can see it.</span>
+      {onShare && <button type="button" className="btn btn-sm" onClick={onShare}>Add to shared library</button>}
+    </div>
   );
 }

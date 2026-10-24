@@ -1,7 +1,9 @@
 import { expect, test } from "@playwright/test";
 import JSZip from "jszip";
+import { signUp } from "./helpers";
 
 test("team → plan → edit → export", async ({ page }) => {
+  await signUp(page);
   // Create a team with a roster.
   await page.goto("/teams");
   await page.getByLabel("Team name").fill("12U-Blue");
@@ -76,6 +78,7 @@ test("team → plan → edit → export", async ({ page }) => {
 });
 
 test("drill library filters and editing", async ({ page }) => {
+  await signUp(page);
   await page.goto("/drills");
   await expect(page.getByTestId("drill-card").first()).toBeVisible();
   await page.getByLabel("Search drills").fill("short hops");
@@ -96,6 +99,7 @@ test("drill library filters and editing", async ({ page }) => {
 });
 
 test("custom practice length", async ({ page }) => {
+  await signUp(page);
   await page.goto("/plans/new");
   await expect(page.getByLabel("Custom minutes")).toHaveCount(0);
   await page.getByLabel("Length (minutes)").selectOption("custom");
