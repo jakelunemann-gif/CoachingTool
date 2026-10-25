@@ -1,0 +1,20 @@
+# Render Blueprint: New → Blueprint in the Render dashboard, then pick this repo.
+services:
+  - type: web
+    name: practice-planner
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DATABASE_URL
+        value: file:/var/data/app.db
+      - key: SIGNUP_CODE
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
+      - key: NEXTAUTH_SECRET
+        generateValue: true
