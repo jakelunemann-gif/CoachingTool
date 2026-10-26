@@ -81,8 +81,28 @@ Logins use the app's own session cookie, stored in the `UserSession` table. Conn
 
 ## Hosting
 
-- **Node host** (Render, Railway, Fly, a home server): `npm run build && npx prisma migrate deploy && npm start`. SQLite works if the disk is persistent.
+### Render (recommended)
+
+The repo includes a `Dockerfile` and a `render.yaml` Blueprint, so Render sets up the web service, its persistent disk and most variables for you. SQLite lives on the disk. Starter plan (about $7/month) plus about $0.25/month for the 1 GB disk; the free plan can't attach a disk, so data would be wiped on every deploy.
+
+1. Sign in at [render.com](https://render.com) with GitHub and give Render access to this repo.
+2. Click **New → Blueprint**, pick this repo and the branch to deploy from (normally `main`).
+3. Render reads `render.yaml` and asks for `SIGNUP_CODE` and `ADMIN_EMAILS` (see [Accounts and admins](#accounts-and-admins)). Set a `SIGNUP_CODE` so only coaches you give it to can create accounts. `NEXTAUTH_SECRET` is generated for you, and `DATABASE_URL` points at the disk.
+4. Click **Apply**. The first build takes a few minutes. Your URL looks like `https://practice-planner.onrender.com` (shown at the top of the service page).
+5. Every start applies migrations and seeds the drill library (existing drills and edits are kept). Every push to the deploy branch redeploys automatically.
+
+Open the URL and create your account right away: the first account becomes the admin, unless your email is in `ADMIN_EMAILS`.
+
+**Google Drive on the hosted app:** in the service's **Environment** tab, add `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (and `GOOGLE_DRIVE_SCOPE=drive` if you use it). In the Google Cloud Console, add `<your URL>/api/auth/callback/google` as an authorized redirect URI. `NEXTAUTH_URL` defaults to the Render URL; set it only if you add a custom domain.
+
+**Backups:** the whole database is `/var/data/app.db` on the disk. Render takes daily snapshots of disks, which you can restore from the service's **Disks** page.
+
+### Other hosts
+
+- **Any Docker host** (Fly, a home server): build the `Dockerfile`, mount a persistent disk, and set the same variables. The container listens on `$PORT` (default 3000).
 - **Vercel or other serverless**: needs Postgres. In `prisma/schema.prisma` change `provider = "sqlite"` to `"postgresql"`, set `DATABASE_URL`, delete `prisma/migrations`, and run `npx prisma migrate dev --name init`.
+
+Leave `SIGNUP_CODE` unset only if you're fine with anyone who finds the URL creating an account.
 
 ## Tests
 
