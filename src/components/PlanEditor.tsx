@@ -333,7 +333,7 @@ export function PlanEditor({ plan, drills, driveEnabled }: { plan: PlanRecord; d
             <div className="ml-auto flex flex-wrap gap-2">
               <button className="btn btn-primary" onClick={save} disabled={!!busy}>{busy === "save" ? "Saving…" : dirty ? "Save*" : "Save"}</button>
               <button className="btn" onClick={regenerate} disabled={!!busy}>{busy === "regen" ? "Building…" : "Regenerate"}</button>
-              <Menu label={busy === "drive" ? "Saving to Drive…" : "Export ▾"}>
+              <Menu label={busy === "drive" ? "Saving to Drive…" : "Export ▾"} align="right">
                 <button role="menuitem" className={menuItemClass} onClick={() => openAfterSave(`/plans/${plan.id}/print`)}>Print / PDF</button>
                 <button role="menuitem" className={menuItemClass} onClick={async () => { if (await saveIfDirty()) window.location.href = `/api/plans/${plan.id}/docx`; }}>Download .docx</button>
                 {driveEnabled && (

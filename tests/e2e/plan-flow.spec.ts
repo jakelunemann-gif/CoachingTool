@@ -74,7 +74,11 @@ test("team → plan → edit → export", async ({ page }) => {
   await expect(page.getByRole("menuitem", { name: "Print / PDF" })).toBeVisible();
   await expect(page.getByRole("menuitem", { name: "Download .docx" })).toBeVisible();
   await expect(page.getByRole("menuitem", { name: /Google/ })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: "Print / PDF" })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("menuitem", { name: "Download .docx" })).toBeFocused();
   await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Export ▾" })).toBeFocused();
   await expect(page.getByRole("menu")).toHaveCount(0);
   await page.getByRole("button", { name: "More actions" }).click();
   await expect(page.getByRole("menuitem", { name: "Use setup for next practice" })).toBeVisible();
@@ -180,9 +184,17 @@ test("phone layout", async ({ browser }) => {
   expect((await title.boundingBox())!.width).toBeGreaterThan(220);
 
   await page.getByTestId("account-menu").click();
-  await page.getByRole("link", { name: "Settings" }).click();
+  await page.getByRole("menuitem", { name: "Settings" }).click();
   await page.waitForURL(/\/settings$/);
   await expect(page.getByTestId("drive-unavailable")).toContainText("Ask your admin");
   await expect(page.getByText("GOOGLE_CLIENT_ID")).toHaveCount(0);
+
+  // Tapping the page you're already on still closes the menu, and Log out works from it.
+  await page.getByTestId("account-menu").click();
+  await page.getByRole("menuitem", { name: "Settings" }).click();
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await page.getByTestId("account-menu").click();
+  await page.getByRole("menuitem", { name: "Log out" }).click();
+  await page.waitForURL(/\/login/);
   await context.close();
 });

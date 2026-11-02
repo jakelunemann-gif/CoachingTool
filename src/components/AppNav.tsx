@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef } from "react";
 import { logOut } from "@/app/actions";
+import { Menu, menuItemClass } from "./Menu";
 
 const DESKTOP_LINKS = [
   { href: "/plans/new", label: "New Plan" },
@@ -22,6 +22,7 @@ function isActive(pathname: string, href: string): boolean {
 
 export function DesktopNav({ isAdmin, pending }: { isAdmin: boolean; pending: number }) {
   const pathname = usePathname();
+  const adminActive = isActive(pathname, "/admin");
   const link = (active: boolean) => `text-sm font-medium hover:text-brand-700 ${active ? "text-brand-700" : "text-slate-600"}`;
   return (
     <div className="hidden items-center gap-x-5 md:flex">
@@ -34,7 +35,7 @@ export function DesktopNav({ isAdmin, pending }: { isAdmin: boolean; pending: nu
         );
       })}
       {isAdmin && (
-        <Link href="/admin" className={link(isActive(pathname, "/admin"))} aria-current={isActive(pathname, "/admin") ? "page" : undefined}>
+        <Link href="/admin" className={link(adminActive)} aria-current={adminActive ? "page" : undefined}>
           Admin{pending > 0 && <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-800" data-testid="review-count">{pending}</span>}
         </Link>
       )}
@@ -44,38 +45,33 @@ export function DesktopNav({ isAdmin, pending }: { isAdmin: boolean; pending: nu
 
 /** Settings, Admin and Log out live under the coach's name on phones, where the tab bar has no room for them. */
 export function AccountMenu({ name, isAdmin, pending }: { name: string; isAdmin: boolean; pending: number }) {
-  const pathname = usePathname();
-  const ref = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    const close = (e: MouseEvent) => {
-      if (ref.current?.open && !ref.current.contains(e.target as Node)) ref.current.open = false;
-    };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, []);
   const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("") || "?";
-  const item = "flex items-center justify-between px-4 py-3 text-sm text-slate-700 hover:bg-slate-50";
+  const item = `${menuItemClass} justify-between py-3`;
   return (
-    // Keyed by path so the menu closes after navigating.
-    <details key={pathname} ref={ref} className="relative ml-auto md:hidden">
-      <summary data-testid="account-menu" className="flex cursor-pointer list-none items-center gap-2 rounded-full py-1 pl-1 pr-3 text-sm font-medium text-slate-700 [&::-webkit-details-marker]:hidden">
-        <span className="grid h-8 w-8 place-items-center rounded-full bg-brand-700 text-xs font-bold text-white" aria-hidden="true">{initials}</span>
-        <span className="max-w-[9rem] truncate">{name}</span>
-        {pending > 0 && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-800">{pending}</span>}
-      </summary>
-      <div className="absolute right-0 z-40 mt-2 w-56 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
-        <Link href="/settings" className={item}>Settings</Link>
-        {isAdmin && (
-          <Link href="/admin" className={item}>
-            Admin review
-            {pending > 0 && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-800">{pending} waiting</span>}
-          </Link>
-        )}
-        <form action={logOut} className="border-t border-slate-100">
-          <button className={`${item} w-full text-brand-700`}>Log out</button>
-        </form>
-      </div>
-    </details>
+    <Menu
+      className="ml-auto md:hidden"
+      align="right"
+      testId="account-menu"
+      buttonClassName="flex items-center gap-2 rounded-full py-1 pl-1 pr-3 text-sm font-medium text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+      label={
+        <>
+          <span className="grid h-8 w-8 place-items-center rounded-full bg-brand-700 text-xs font-bold text-white" aria-hidden="true">{initials}</span>
+          <span className="max-w-[9rem] truncate">{name}</span>
+          {pending > 0 && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-800">{pending}</span>}
+        </>
+      }
+    >
+      <Link role="menuitem" href="/settings" className={item}>Settings</Link>
+      {isAdmin && (
+        <Link role="menuitem" href="/admin" className={item}>
+          Admin review
+          {pending > 0 && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-800">{pending} waiting</span>}
+        </Link>
+      )}
+      <form action={logOut} className="border-t border-slate-100">
+        <button role="menuitem" className={`${item} text-brand-700`}>Log out</button>
+      </form>
+    </Menu>
   );
 }
 

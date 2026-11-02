@@ -117,7 +117,8 @@ export function PlanForm({
     const input: PlanInput = {
       sportSlug,
       teamId: teamId || undefined,
-      teamName,
+      // The name field is hidden while a saved team is picked, so use the team's current name.
+      teamName: team?.name ?? teamName,
       ageSlug,
       skillSlug,
       date,
