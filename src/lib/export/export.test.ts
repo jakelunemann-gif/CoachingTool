@@ -36,6 +36,13 @@ describe("planToDocModel", () => {
     expect(doc.nodes[3].suffix).toBe("");
   });
 
+  it("doesn't double the Coach prefix for a coach saved as \"Coach Brandon\"", () => {
+    const circuit = items[2];
+    const renamed = { ...circuit, children: circuit.children!.map((c) => ({ ...c, coach: "Coach Brandon" })) };
+    const doc = planToDocModel({ ...plan, items: [items[0], items[1], renamed] });
+    expect(doc.nodes[2].children[2].suffix).toBe("-Coach Brandon");
+  });
+
   it("can hide times", () => {
     expect(planToDocModel({ ...plan, showTimes: false }).nodes[0].suffix).toBe("");
   });

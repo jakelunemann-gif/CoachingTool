@@ -27,10 +27,21 @@ test("team → plan → edit → export", async ({ page }) => {
   await page.getByLabel("Location").fill("MSE Gym 3");
   await page.locator('[data-chip="surface:gym"]').click();
   await page.locator('[data-chip="player:Vivian"]').click(); // missing
+  // Picking a saved team hides the duplicate team name field.
+  await expect(page.getByLabel("Team name")).toHaveCount(0);
+  // The signed-in coach starts selected; turn them off so this practice has three coaches.
+  const self = page.locator('[data-chip="coach:Test Coach"]');
+  await expect(self).toHaveAttribute("aria-pressed", "true");
+  await expect(self).toHaveText("Test Coach (you)");
+  await self.click();
   for (const c of ["Jake", "Trevor", "Brandon"]) {
     await page.getByLabel("Add coach").fill(c);
     await page.getByLabel("Add coach").press("Enter");
   }
+  // Typing an existing coach another way doesn't add a duplicate.
+  await page.getByLabel("Add coach").fill("coach jake");
+  await page.getByLabel("Add coach").press("Enter");
+  await expect(page.locator('[data-chip^="coach:"][aria-pressed="true"]')).toHaveCount(3);
   await page.locator('[data-chip="focus:hitting-mechanics"]').click();
   await page.locator('[data-chip="focus:bunting"]').click();
   await page.getByLabel("Notes for next practice").fill("Wednesday at MSE Gym 2 CAGES");
@@ -57,6 +68,18 @@ test("team → plan → edit → export", async ({ page }) => {
 
   await page.getByRole("button", { name: "Save*" }).click();
   await expect(page.getByTestId("editor-message")).toHaveText("Saved");
+
+  // Exports sit in one menu; Drive is hidden until Google sign-in is set up.
+  await page.getByRole("button", { name: "Export ▾" }).click();
+  await expect(page.getByRole("menuitem", { name: "Print / PDF" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Download .docx" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: /Google/ })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await page.getByRole("button", { name: "More actions" }).click();
+  await expect(page.getByRole("menuitem", { name: "Use setup for next practice" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Delete plan" })).toBeVisible();
+  await page.keyboard.press("Escape");
 
   // Print view.
   const url = page.url();
@@ -102,13 +125,16 @@ test("custom practice length", async ({ page }) => {
   await signUp(page);
   await page.goto("/plans/new");
   await expect(page.getByLabel("Custom minutes")).toHaveCount(0);
-  await page.getByLabel("Length (minutes)").selectOption("custom");
+  await expect(page.getByRole("radio", { name: "90 min" })).toBeChecked();
+  const custom = page.getByRole("radio", { name: "Custom" });
+  await custom.check();
   const minutes = page.getByLabel("Custom minutes");
   await expect(minutes).toBeFocused();
-  await expect(page.getByLabel("Length (minutes)")).toHaveValue("custom");
+  await expect(custom).toBeChecked();
   // Typing a preset value stays in custom mode instead of snapping back.
   await minutes.fill("90");
-  await expect(page.getByLabel("Length (minutes)")).toHaveValue("custom");
+  await expect(custom).toBeChecked();
+  await expect(page.getByRole("radio", { name: "90 min" })).not.toBeChecked();
   await minutes.fill("50");
   await page.getByLabel("Start time").fill("20:00");
   await page.locator('[data-chip="age:10u"]').click();
@@ -119,7 +145,44 @@ test("custom practice length", async ({ page }) => {
 
   // Switching back to a preset hides the box and uses the preset.
   await page.goto("/plans/new");
-  await page.getByLabel("Length (minutes)").selectOption("custom");
-  await page.getByLabel("Length (minutes)").selectOption("60");
+  await page.getByRole("radio", { name: "Custom" }).check();
+  await page.getByRole("radio", { name: "60 min" }).check();
   await expect(page.getByLabel("Custom minutes")).toHaveCount(0);
+});
+
+test("phone layout", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  await page.goto("/signup");
+  await page.getByLabel("Your name").fill("Coach Phone");
+  await page.getByLabel("Email").fill(`phone-${Date.now()}-${process.pid}@example.com`);
+  await page.getByLabel("Password").fill("practice-123");
+  await page.getByRole("button", { name: "Create account" }).click();
+
+  // A bottom tab bar replaces the wrapped top links; account links sit under the coach's name.
+  const tabs = page.getByRole("navigation", { name: "Main" });
+  await expect(tabs).toBeVisible();
+  await expect(page.getByTestId("signed-in-as")).toBeHidden();
+  await tabs.getByRole("link", { name: "New plan" }).click();
+  await page.waitForURL(/\/plans\/new$/);
+  await expect(tabs.getByRole("link", { name: "New plan" })).toHaveAttribute("aria-current", "page");
+  await expect(tabs.getByRole("link", { name: "Plans" })).not.toHaveAttribute("aria-current", "page");
+
+  // The saved coach is "Phone", without the typed "Coach " prefix.
+  await expect(page.locator('[data-chip="coach:Phone"]')).toHaveAttribute("aria-pressed", "true");
+  await page.locator('[data-chip="age:12u"]').click();
+  await page.getByRole("button", { name: "Build practice plan" }).click();
+  await page.waitForURL(/\/plans\/[^/]+$/);
+  await expect(page.getByTestId("plan-document")).toBeVisible();
+
+  // Block titles get their own row instead of being squeezed to a few letters.
+  const title = page.getByLabel("Block title").first();
+  expect((await title.boundingBox())!.width).toBeGreaterThan(220);
+
+  await page.getByTestId("account-menu").click();
+  await page.getByRole("link", { name: "Settings" }).click();
+  await page.waitForURL(/\/settings$/);
+  await expect(page.getByTestId("drive-unavailable")).toContainText("Ask your admin");
+  await expect(page.getByText("GOOGLE_CLIENT_ID")).toHaveCount(0);
+  await context.close();
 });

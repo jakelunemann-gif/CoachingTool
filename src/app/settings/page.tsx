@@ -47,8 +47,17 @@ export default async function SettingsPage() {
       </section>
       <section className="card space-y-2">
         <h2 className="h2">Google Drive</h2>
-        <p className="text-sm text-slate-600">“Save to Google Drive” creates a Google Doc in this folder, named like your existing plans.</p>
-        <DriveSettings folderId={user.driveFolderId} googleConfigured={googleConfigured} signedInAs={session?.user?.email} />
+        {googleConfigured || user.isAdmin ? (
+          <>
+            <p className="text-sm text-slate-600">“Save to Google Drive” creates a Google Doc in this folder, named like your existing plans.</p>
+            <DriveSettings folderId={user.driveFolderId} googleConfigured={googleConfigured} signedInAs={session?.user?.email} />
+          </>
+        ) : (
+          // The setup steps (env vars, .env) are for whoever hosts the app, so coaches get plain language instead.
+          <p className="text-sm text-slate-600" data-testid="drive-unavailable">
+            Saving to Google Drive isn&apos;t turned on for this app yet. Ask your admin to set it up. Until then, use Export › Print / PDF or Download .docx on any plan.
+          </p>
+        )}
       </section>
       {user.isAdmin && (
         <section className="card space-y-2">

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPlan } from "@/app/actions";
+import { coachName, sameCoach } from "@/lib/format";
 import type { PlanInput, SportBundle, TeamWithPlayers } from "@/lib/types";
 import { ChipSelect } from "./ChipSelect";
 
@@ -19,12 +20,15 @@ export function PlanForm({
   teams,
   coaches,
   locations,
+  selfName,
   defaults,
 }: {
   sports: SportBundle[];
   teams: TeamWithPlayers[];
   coaches: string[];
   locations: { name: string; surfaceSlug: string }[];
+  /** The signed-in coach's account name; their saved coach starts selected. */
+  selfName?: string;
   defaults?: Partial<PlanInput>;
 }) {
   const router = useRouter();
@@ -57,7 +61,8 @@ export function PlanForm({
   const [surfaceSlug, setSurfaceSlug] = useState(defaults?.surfaceSlug ?? "field");
   const [equipment, setEquipment] = useState<string[]>(defaults?.equipmentSlugs ?? DEFAULT_EQUIPMENT);
   const [focus, setFocus] = useState<string[]>([]);
-  const [coachList, setCoachList] = useState<string[]>(defaults?.coaches ?? []);
+  const self = selfName ? coaches.find((c) => sameCoach(c, selfName)) : undefined;
+  const [coachList, setCoachList] = useState<string[]>(defaults?.coaches ?? (self ? [self] : []));
   const [extraCoach, setExtraCoach] = useState("");
   const [absent, setAbsent] = useState<string[]>([]);
   const [playerCount, setPlayerCount] = useState(defaults?.playerCount || 12);
@@ -97,8 +102,10 @@ export function PlanForm({
   };
 
   const addCoach = () => {
-    const n = extraCoach.trim();
-    if (n && !coachList.includes(n)) setCoachList([...coachList, n]);
+    const n = coachName(extraCoach);
+    // Typing "Coach Jake" or "jake" picks the saved "Jake" instead of adding a duplicate.
+    const name = allCoaches.find((c) => sameCoach(c, n)) ?? n;
+    if (name && !coachList.includes(name)) setCoachList([...coachList, name]);
     setExtraCoach("");
   };
 
@@ -151,7 +158,7 @@ export function PlanForm({
             </select>
           </div>
         )}
-        <div>
+        <div className={teamId ? "md:col-span-2" : ""}>
           <label className="label" htmlFor="team">Saved team</label>
           <select id="team" className="input" value={teamId} onChange={(e) => pickTeam(e.target.value)}>
             <option value="">— No saved team —</option>
@@ -160,10 +167,12 @@ export function PlanForm({
             ))}
           </select>
         </div>
-        <div>
-          <label className="label" htmlFor="teamName">Team name</label>
-          <input id="teamName" className="input" value={teamName} onChange={(e) => setTeamName(e.target.value)} placeholder="12U-Blue" />
-        </div>
+        {!teamId && (
+          <div>
+            <label className="label" htmlFor="teamName">Team name</label>
+            <input id="teamName" className="input" value={teamName} onChange={(e) => setTeamName(e.target.value)} placeholder="12U-Blue" />
+          </div>
+        )}
         <div>
           <label className="label" htmlFor="date">Date</label>
           <input id="date" type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} required />
@@ -173,48 +182,6 @@ export function PlanForm({
           <input id="start" type="time" className="input" value={startTime} onChange={(e) => setStartTime(e.target.value)} required />
         </div>
         <div>
-          <label className="label" htmlFor="duration">Length (minutes)</label>
-          <div className="flex gap-2">
-            <select
-              id="duration"
-              className="input"
-              value={customDuration ? "custom" : String(durationMin)}
-              onChange={(e) => {
-                if (e.target.value === "custom") {
-                  focusCustom.current = true;
-                  setCustomText(String(durationMin));
-                  setCustomDuration(true);
-                } else {
-                  setCustomDuration(false);
-                  setDurationMin(Number(e.target.value));
-                }
-              }}
-            >
-              {DURATIONS.map((d) => (
-                <option key={d} value={d}>{d >= 60 ? `${Math.floor(d / 60)}h${d % 60 ? ` ${d % 60}m` : ""}` : `${d}m`}</option>
-              ))}
-              <option value="custom">Custom…</option>
-            </select>
-            {customDuration && (
-              <input
-                ref={customRef}
-                type="number"
-                aria-label="Custom minutes"
-                className="input w-24"
-                min={15}
-                max={300}
-                step={5}
-                required
-                value={customText}
-                onChange={(e) => {
-                  setCustomText(e.target.value);
-                  setDurationMin(e.target.value === "" ? NaN : Number(e.target.value));
-                }}
-              />
-            )}
-          </div>
-        </div>
-        <div className="md:col-span-2">
           <label className="label" htmlFor="location">Location</label>
           <input id="location" className="input" list="locations" value={location} onChange={(e) => pickLocation(e.target.value)} placeholder="MSE Field 12" />
           <datalist id="locations">
@@ -223,6 +190,54 @@ export function PlanForm({
             ))}
           </datalist>
         </div>
+        <fieldset className="md:col-span-3">
+          <legend className="label">Length</legend>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="seg w-full grid-cols-4 sm:inline-grid sm:w-auto sm:grid-cols-7">
+              {[...DURATIONS.map((d) => ({ value: String(d), label: `${d} min` })), { value: "custom", label: "Custom" }].map((o) => (
+                <label key={o.value} className={`seg-option ${o.value === "custom" ? "col-span-2 sm:col-span-1" : ""}`}>
+                  <input
+                    type="radio"
+                    name="duration"
+                    value={o.value}
+                    checked={customDuration ? o.value === "custom" : o.value === String(durationMin)}
+                    onChange={() => {
+                      if (o.value === "custom") {
+                        focusCustom.current = true;
+                        setCustomText(String(durationMin));
+                        setCustomDuration(true);
+                      } else {
+                        setCustomDuration(false);
+                        setDurationMin(Number(o.value));
+                      }
+                    }}
+                  />
+                  <span>{o.label}</span>
+                </label>
+              ))}
+            </div>
+            {customDuration && (
+              <span className="flex items-center gap-1.5 text-sm text-slate-600">
+                <input
+                  ref={customRef}
+                  type="number"
+                  aria-label="Custom minutes"
+                  className="input w-24"
+                  min={15}
+                  max={300}
+                  step={5}
+                  required
+                  value={customText}
+                  onChange={(e) => {
+                    setCustomText(e.target.value);
+                    setDurationMin(e.target.value === "" ? NaN : Number(e.target.value));
+                  }}
+                />
+                min
+              </span>
+            )}
+          </div>
+        </fieldset>
         <div className="md:col-span-3">
           <span className="label">Playing surface</span>
           <ChipSelect name="surface" multiple={false} options={tagOptions("SURFACE")} selected={[surfaceSlug]} onChange={(v) => setSurfaceSlug(v[0] ?? "")} />
@@ -273,7 +288,7 @@ export function PlanForm({
         <div className="md:col-span-2">
           <span className="label">Coaches at practice ({coachList.length})</span>
           <div className="flex flex-wrap items-center gap-2">
-            <ChipSelect name="coach" options={allCoaches.map((c) => ({ value: c, label: c }))} selected={coachList} onChange={setCoachList} />
+            <ChipSelect name="coach" options={allCoaches.map((c) => ({ value: c, label: c === self ? `${c} (you)` : c }))} selected={coachList} onChange={setCoachList} />
             <input
               className="input w-40"
               placeholder="Add coach"

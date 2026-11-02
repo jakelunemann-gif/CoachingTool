@@ -24,6 +24,7 @@ export default async function NewPlanPage({ searchParams }: { searchParams: Prom
         teams={teams}
         coaches={coaches.map((c) => c.name)}
         locations={locations.map((l) => ({ name: l.name, surfaceSlug: l.surfaceSlug }))}
+        selfName={user.name}
         defaults={source?.input}
       />
     </div>

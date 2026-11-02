@@ -1,4 +1,4 @@
-import { clockAt, planHeader } from "../format";
+import { clockAt, coachName, planHeader } from "../format";
 import { displayTitles, startOffsets } from "../generator/timeline";
 import type { PlanGroup, PlanItem } from "../types";
 
@@ -36,7 +36,7 @@ const leaf = (text: string): DocNode => ({ text, children: [] });
 export const groupLine = (g: PlanGroup): string => (g.players.length ? `${g.name}: ${g.players.join(", ")}` : `${g.name} (${g.size} players)`);
 
 function stationNode(s: PlanItem): DocNode {
-  const coach = s.coach ? `-Coach ${s.coach}` : "";
+  const coach = s.coach ? `-Coach ${coachName(s.coach)}` : "";
   const who = s.who ? ` (${s.who})` : "";
   return { text: s.title, link: s.videoUrl, suffix: `${coach}${who}`, children: s.lines.map(leaf) };
 }
