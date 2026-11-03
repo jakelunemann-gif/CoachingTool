@@ -8,7 +8,7 @@ import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { endOtherSessions, endSession, requireAdmin, requireUser, startSession, type CurrentUser } from "@/lib/auth/session";
 import { editableDrillWhere, getDrills, getSport, getTeamHistory } from "@/lib/data";
 import { prisma } from "@/lib/db";
-import { planTitle } from "@/lib/format";
+import { coachName, planTitle, sameCoach } from "@/lib/format";
 import { generatePlan } from "@/lib/generator";
 import { randomSeed } from "@/lib/generator/random";
 import { BLOCK_TYPES, TAG_KINDS, type PlanInput, type PlanItem } from "@/lib/types";
@@ -360,9 +360,12 @@ export async function deleteTeam(id: string) {
 
 export async function addCoach(name: string) {
   const user = await requireUser();
-  const n = name.trim();
+  const n = coachName(name);
   if (n) {
-    await prisma.coach.upsert({ where: { userId_name: { userId: user.id, name: n } }, update: { active: true }, create: { userId: user.id, name: n } });
+    // "Coach Jake" and "jake" are the same coach as a saved "Jake".
+    const existing = (await prisma.coach.findMany({ where: { userId: user.id } })).find((c) => sameCoach(c.name, n));
+    if (existing) await prisma.coach.update({ where: { id: existing.id }, data: { active: true } });
+    else await prisma.coach.create({ data: { userId: user.id, name: n } });
   }
   revalidatePath("/settings");
 }

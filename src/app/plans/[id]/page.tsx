@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { PlanEditor } from "@/components/PlanEditor";
+import { googleConfigured } from "@/lib/auth/google";
 import { requireUser } from "@/lib/auth/session";
 import { getDrills, getPlan } from "@/lib/data";
 
@@ -10,5 +11,5 @@ export default async function PlanPage({ params }: { params: Promise<{ id: strin
   const plan = await getPlan((await params).id, user.id);
   if (!plan) notFound();
   const drills = await getDrills(user.id, plan.sportSlug);
-  return <PlanEditor plan={plan} drills={drills} />;
+  return <PlanEditor plan={plan} drills={drills} driveEnabled={googleConfigured} />;
 }

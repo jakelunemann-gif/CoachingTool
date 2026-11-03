@@ -10,9 +10,10 @@ import { useEffect, useMemo, useState } from "react";
 import { deletePlan, regeneratePlan, savePlan } from "@/app/actions";
 import type { PlanRecord } from "@/lib/data";
 import { groupLine, planToDocModel } from "@/lib/export/docModel";
-import { clockAt, numberWord } from "@/lib/format";
+import { clockAt, coachName, numberWord } from "@/lib/format";
 import { alternatives, compatibleTypes, displayTitles, drillToItem, startOffsets, totalMinutes, withRotation } from "@/lib/generator";
 import { BLOCK_TYPE_LABELS, type BlockType, type DrillLite, type PlanGroup, type PlanItem } from "@/lib/types";
+import { Menu, menuItemClass } from "./Menu";
 import { PlanDocument } from "./PlanDocument";
 
 const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `id-${Date.now()}-${Math.random()}`);
@@ -175,7 +176,8 @@ function SortableCard({ id, children }: { id: string; children: (handle: React.R
   );
 }
 
-export function PlanEditor({ plan, drills }: { plan: PlanRecord; drills: DrillLite[] }) {
+/** `driveEnabled` is false until an admin sets up Google sign-in, so coaches never see a button that only errors. */
+export function PlanEditor({ plan, drills, driveEnabled }: { plan: PlanRecord; drills: DrillLite[]; driveEnabled: boolean }) {
   const router = useRouter();
   const [items, setItems] = useState<PlanItem[]>(plan.items);
   const [title, setTitle] = useState(plan.title);
@@ -331,23 +333,28 @@ export function PlanEditor({ plan, drills }: { plan: PlanRecord; drills: DrillLi
             <div className="ml-auto flex flex-wrap gap-2">
               <button className="btn btn-primary" onClick={save} disabled={!!busy}>{busy === "save" ? "Saving…" : dirty ? "Save*" : "Save"}</button>
               <button className="btn" onClick={regenerate} disabled={!!busy}>{busy === "regen" ? "Building…" : "Regenerate"}</button>
+              <Menu label={busy === "drive" ? "Saving to Drive…" : "Export ▾"} align="right">
+                <button role="menuitem" className={menuItemClass} onClick={() => openAfterSave(`/plans/${plan.id}/print`)}>Print / PDF</button>
+                <button role="menuitem" className={menuItemClass} onClick={async () => { if (await saveIfDirty()) window.location.href = `/api/plans/${plan.id}/docx`; }}>Download .docx</button>
+                {driveEnabled && (
+                  <button role="menuitem" className={menuItemClass} onClick={saveToDrive} disabled={!!busy}>{plan.driveFileId ? "Update Google Doc" : "Save to Google Drive"}</button>
+                )}
+              </Menu>
+              <Menu label="•••" ariaLabel="More actions" align="right">
+                <Link role="menuitem" className={menuItemClass} href={`/plans/new?from=${plan.id}`}>Use setup for next practice</Link>
+                <button
+                  role="menuitem"
+                  className={`${menuItemClass} text-red-700 hover:bg-red-50`}
+                  onClick={async () => {
+                    if (!confirm("Delete this plan?")) return;
+                    await deletePlan(plan.id);
+                    router.push("/plans");
+                  }}
+                >
+                  Delete plan
+                </button>
+              </Menu>
             </div>
-          </div>
-          <div className="flex flex-wrap gap-2 border-t pt-3">
-            <button className="btn" onClick={() => openAfterSave(`/plans/${plan.id}/print`)}>Print / PDF</button>
-            <button className="btn" onClick={async () => { if (await saveIfDirty()) window.location.href = `/api/plans/${plan.id}/docx`; }}>Download .docx</button>
-            <button className="btn" onClick={saveToDrive} disabled={!!busy}>{busy === "drive" ? "Saving to Drive…" : plan.driveFileId ? "Update Google Doc" : "Save to Google Drive"}</button>
-            <Link className="btn" href={`/plans/new?from=${plan.id}`}>Use setup for next practice</Link>
-            <button
-              className="btn btn-danger ml-auto"
-              onClick={async () => {
-                if (!confirm("Delete this plan?")) return;
-                await deletePlan(plan.id);
-                router.push("/plans");
-              }}
-            >
-              Delete
-            </button>
           </div>
           {message && <p className="text-sm text-slate-600" role="status" data-testid="editor-message">{message}</p>}
           {warnings.length > 0 && (
@@ -365,18 +372,23 @@ export function PlanEditor({ plan, drills }: { plan: PlanRecord; drills: DrillLi
               <SortableCard key={item.id} id={item.id}>
                 {(handle) => (
                   <div className={`card p-3 ${item.kind === "water" ? "bg-sky-50" : ""}`} data-testid="plan-item">
-                    <div className="flex items-center gap-2">
-                      {handle}
-                      <span className="w-12 shrink-0 text-xs tabular-nums text-slate-500">{clockAt(plan.startTime, offsets[idx])}</span>
-                      <input className="input font-semibold" value={item.kind === "circuit" ? titles[idx] : item.title} onChange={(e) => patch(item.id, { title: e.target.value })} aria-label="Block title" disabled={item.kind === "circuit" && item.title === "Circuit"} />
-                      {item.kind !== "circuit" && (
-                        <input type="number" min={0} className="input w-16" value={item.minutes} onChange={(e) => patch(item.id, { minutes: Number(e.target.value), children: item.children?.map((c) => ({ ...c, minutes: Number(e.target.value) })) })} aria-label="Minutes" />
-                      )}
-                      {item.kind !== "circuit" && <span className="text-xs text-slate-500">min</span>}
-                      {item.drillId && item.kind === "block" && (
-                        <button className="btn btn-sm" onClick={() => openSwap(item, (d) => { patch(item.id, swapDrill(item, d, drillById.get(item.drillId!))); setPicker(null); })}>Swap</button>
-                      )}
-                      <button className="btn btn-sm btn-danger" onClick={() => remove(item.id)} aria-label={`Remove ${item.title}`}>✕</button>
+                    {/* On phones the title gets its own row so it isn't squeezed by the controls. */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex min-w-0 flex-1 basis-full items-center gap-2 sm:basis-0">
+                        {handle}
+                        <span className="w-12 shrink-0 text-xs tabular-nums text-slate-500">{clockAt(plan.startTime, offsets[idx])}</span>
+                        <input className="input min-w-0 flex-1 font-semibold" value={item.kind === "circuit" ? titles[idx] : item.title} onChange={(e) => patch(item.id, { title: e.target.value })} aria-label="Block title" disabled={item.kind === "circuit" && item.title === "Circuit"} />
+                      </div>
+                      <div className="ml-auto flex items-center gap-2">
+                        {item.kind !== "circuit" && (
+                          <input type="number" min={0} className="input w-16" value={item.minutes} onChange={(e) => patch(item.id, { minutes: Number(e.target.value), children: item.children?.map((c) => ({ ...c, minutes: Number(e.target.value) })) })} aria-label="Minutes" />
+                        )}
+                        {item.kind !== "circuit" && <span className="text-xs text-slate-500">min</span>}
+                        {item.drillId && item.kind === "block" && (
+                          <button className="btn btn-sm" onClick={() => openSwap(item, (d) => { patch(item.id, swapDrill(item, d, drillById.get(item.drillId!))); setPicker(null); })}>Swap</button>
+                        )}
+                        <button className="btn btn-sm btn-danger" onClick={() => remove(item.id)} aria-label={`Remove ${item.title}`}>✕</button>
+                      </div>
                     </div>
 
                     {item.kind === "circuit" && (
@@ -411,25 +423,29 @@ export function PlanEditor({ plan, drills }: { plan: PlanRecord; drills: DrillLi
                         {item.children.map((s, si) => (
                           <div key={s.id} className="rounded-md bg-slate-50 p-2" data-testid="station">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-xs font-semibold text-slate-400">{String.fromCharCode(97 + si)}.</span>
-                              <input className="input min-w-0 flex-1" value={s.title} onChange={(e) => patchStation(item.id, s.id, { title: e.target.value })} aria-label="Station title" />
-                              <select className="input w-32" value={s.coach ?? ""} onChange={(e) => patchStation(item.id, s.id, { coach: e.target.value || undefined })} aria-label="Coach">
-                                <option value="">No coach</option>
-                                {[...new Set([...coaches, ...(s.coach ? [s.coach] : [])])].map((c) => (
-                                  <option key={c} value={c}>Coach {c}</option>
-                                ))}
-                              </select>
-                              <button className="btn btn-sm" onClick={() => openSwap(s, (d) => { patchStation(item.id, s.id, swapDrill(s, d, drillById.get(s.drillId ?? ""))); setPicker(null); }, true)}>Swap</button>
-                              <button className="btn btn-sm" disabled={si === 0} onClick={() => { const c = arrayMove(item.children!, si, si - 1); patch(item.id, { children: c }); }} aria-label="Move up">↑</button>
-                              <button
-                                className="btn btn-sm btn-danger"
-                                aria-label={`Remove station ${s.title}`}
-                                onClick={() => {
-                                  patch(item.id, withStations(item, item.children!.filter((c) => c.id !== s.id)));
-                                }}
-                              >
-                                ✕
-                              </button>
+                              <div className="flex min-w-0 flex-1 basis-full items-center gap-2 sm:basis-0">
+                                <span className="text-xs font-semibold text-slate-400">{String.fromCharCode(97 + si)}.</span>
+                                <input className="input min-w-0 flex-1" value={s.title} onChange={(e) => patchStation(item.id, s.id, { title: e.target.value })} aria-label="Station title" />
+                              </div>
+                              <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
+                                <select className="input min-w-0 flex-1 sm:w-32 sm:flex-none" value={s.coach ?? ""} onChange={(e) => patchStation(item.id, s.id, { coach: e.target.value || undefined })} aria-label="Coach">
+                                  <option value="">No coach</option>
+                                  {[...new Set([...coaches, ...(s.coach ? [s.coach] : [])])].map((c) => (
+                                    <option key={c} value={c}>Coach {coachName(c)}</option>
+                                  ))}
+                                </select>
+                                <button className="btn btn-sm" onClick={() => openSwap(s, (d) => { patchStation(item.id, s.id, swapDrill(s, d, drillById.get(s.drillId ?? ""))); setPicker(null); }, true)}>Swap</button>
+                                <button className="btn btn-sm" disabled={si === 0} onClick={() => { const c = arrayMove(item.children!, si, si - 1); patch(item.id, { children: c }); }} aria-label="Move up">↑</button>
+                                <button
+                                  className="btn btn-sm btn-danger"
+                                  aria-label={`Remove station ${s.title}`}
+                                  onClick={() => {
+                                    patch(item.id, withStations(item, item.children!.filter((c) => c.id !== s.id)));
+                                  }}
+                                >
+                                  ✕
+                                </button>
+                              </div>
                             </div>
                             {s.who !== undefined && (
                               <input className="input mt-1 text-xs" value={s.who} onChange={(e) => patchStation(item.id, s.id, { who: e.target.value })} aria-label="Who" />

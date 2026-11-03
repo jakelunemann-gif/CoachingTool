@@ -83,3 +83,18 @@ const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "sev
 export function numberWord(n: number): string {
   return NUMBER_WORDS[n] ?? String(n);
 }
+
+/**
+ * A coach's name as stored and matched. The plan adds "Coach " itself
+ * ("-Coach Jake"), so a typed "Coach Jake" is saved as "Jake".
+ */
+export function coachName(raw: string): string {
+  const n = raw.trim().replace(/\s+/g, " ");
+  const stripped = n.replace(/^coach\s+/i, "");
+  return stripped || n;
+}
+
+/** True when two coach names refer to the same person, e.g. "Coach Jake" and "jake". */
+export function sameCoach(a: string, b: string): boolean {
+  return coachName(a).toLowerCase() === coachName(b).toLowerCase();
+}

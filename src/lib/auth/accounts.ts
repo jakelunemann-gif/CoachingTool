@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { coachName } from "../format";
 import { hashPassword } from "./password";
 
 // Imported by the seed script too, so it takes the client as an argument and
@@ -50,7 +51,8 @@ export async function createAccount(prisma: PrismaClient, input: { email: string
       await tx.location.updateMany(claim);
     }
     // The coach signing up is usually at practice, so they're a quick pick on the plan form.
-    if (name) await tx.coach.upsert({ where: { userId_name: { userId: user.id, name } }, update: {}, create: { userId: user.id, name } });
+    const coach = name ? coachName(name) : "";
+    if (coach) await tx.coach.upsert({ where: { userId_name: { userId: user.id, name: coach } }, update: {}, create: { userId: user.id, name: coach } });
     return user;
   });
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDateLong, formatTimeRange, planHeader, planTitle } from "./format";
+import { coachName, formatDateLong, formatTimeRange, planHeader, planTitle, sameCoach } from "./format";
 
 describe("format", () => {
   it("matches the coach's header style", () => {
@@ -16,5 +16,20 @@ describe("format", () => {
 
   it("matches the Drive file names", () => {
     expect(planTitle("2026-04-13", "12U-Blue", "Softball")).toBe("2026 12U-Blue Softball Practice Plan 4.13.26");
+  });
+});
+
+describe("coach names", () => {
+  it("drops a typed Coach prefix, since the plan adds its own", () => {
+    expect(coachName("Coach Jake")).toBe("Jake");
+    expect(coachName("  coach   Trevor ")).toBe("Trevor");
+    expect(coachName("Brandon")).toBe("Brandon");
+    expect(coachName("Test Coach")).toBe("Test Coach");
+    expect(coachName("Coach")).toBe("Coach");
+  });
+
+  it("matches the same coach typed different ways", () => {
+    expect(sameCoach("Coach Jake", "jake")).toBe(true);
+    expect(sameCoach("Jake", "Jake B")).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { logOut } from "@/app/actions";
+import { AccountMenu, DesktopNav, MobileTabBar } from "@/components/AppNav";
 import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import "./globals.css";
@@ -9,14 +10,6 @@ export const metadata: Metadata = {
   title: "Practice Planner",
   description: "Build practice plans from your drill library.",
 };
-
-const NAV = [
-  { href: "/plans/new", label: "New Plan" },
-  { href: "/plans", label: "Plans" },
-  { href: "/drills", label: "Drill Library" },
-  { href: "/teams", label: "Teams" },
-  { href: "/settings", label: "Settings" },
-];
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
@@ -31,25 +24,18 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </Link>
             {user && (
               <>
-                {NAV.map((n) => (
-                  <Link key={n.href} href={n.href} className="text-sm font-medium text-slate-600 hover:text-brand-700">
-                    {n.label}
-                  </Link>
-                ))}
-                {user.isAdmin && (
-                  <Link href="/admin" className="text-sm font-medium text-slate-600 hover:text-brand-700">
-                    Admin{pending > 0 && <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-800" data-testid="review-count">{pending}</span>}
-                  </Link>
-                )}
-                <form action={logOut} className="ml-auto flex items-center gap-2 text-sm text-slate-600">
+                <DesktopNav isAdmin={user.isAdmin} pending={pending} />
+                <form action={logOut} className="ml-auto hidden items-center gap-2 text-sm text-slate-600 md:flex">
                   <span data-testid="signed-in-as">{user.name}</span>
                   <button className="text-brand-700 hover:underline">Log out</button>
                 </form>
+                <AccountMenu name={user.name} isAdmin={user.isAdmin} pending={pending} />
               </>
             )}
           </nav>
         </header>
-        <main className="mx-auto max-w-6xl px-4 py-6 print:max-w-none print:p-0">{children}</main>
+        {user && <MobileTabBar />}
+        <main className={`mx-auto max-w-6xl px-4 pt-6 md:pb-6 print:max-w-none print:p-0 ${user ? "pb-24" : "pb-6"}`}>{children}</main>
       </body>
     </html>
   );
