@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { BLOCK_TYPE_LABELS, BLOCK_TYPES, type DrillLite, type SportBundle } from "@/lib/types";
+import { BLOCK_TYPE_LABELS, BLOCK_TYPES, type DrillLite, type DrillRatingSummary, type SportBundle } from "@/lib/types";
 import { videoInfo } from "@/lib/video";
 import { ChipSelect } from "./ChipSelect";
+import { DrillRating } from "./DrillRating";
 
 export function ageRange(ages: string[], order: { slug: string; label: string }[]): string {
   if (ages.length === 0) return "All ages";
@@ -110,7 +111,17 @@ export function DrillCard({
   );
 }
 
-export function DrillLibrary({ drills, sports, isAdmin }: { drills: DrillLite[]; sports: SportBundle[]; isAdmin: boolean }) {
+export function DrillLibrary({
+  drills,
+  sports,
+  isAdmin,
+  ratings = {},
+}: {
+  drills: DrillLite[];
+  sports: SportBundle[];
+  isAdmin: boolean;
+  ratings?: Record<string, DrillRatingSummary>;
+}) {
   const [sportSlug, setSportSlug] = useState(sports[0]?.slug ?? "");
   const sport = sports.find((s) => s.slug === sportSlug) ?? sports[0];
   const [q, setQ] = useState("");
@@ -121,6 +132,7 @@ export function DrillLibrary({ drills, sports, isAdmin }: { drills: DrillLite[];
   const [coaches, setCoaches] = useState("");
   const [videoOnly, setVideoOnly] = useState(false);
   const [scope, setScope] = useState<"" | "library" | "mine">("");
+  const [sort, setSort] = useState<"name" | "rating">("name");
 
   const filtered = useMemo(() => {
     const text = q.trim().toLowerCase();
@@ -137,6 +149,12 @@ export function DrillLibrary({ drills, sports, isAdmin }: { drills: DrillLite[];
         (!scope || (scope === "mine") === Boolean(d.ownerId)),
     );
   }, [drills, sportSlug, q, age, focus, surface, blockType, coaches, videoOnly, scope]);
+  // Drills arrive sorted by name; "rating" puts the best-rated first and unrated last.
+  const sorted = useMemo(() => {
+    if (sort === "name") return filtered;
+    const score = (d: DrillLite) => ratings[d.id]?.avg ?? -1;
+    return [...filtered].sort((a, b) => score(b) - score(a) || (ratings[b.id]?.count ?? 0) - (ratings[a.id]?.count ?? 0));
+  }, [filtered, ratings, sort]);
 
   if (!sport) return null;
   return (
@@ -180,6 +198,10 @@ export function DrillLibrary({ drills, sports, isAdmin }: { drills: DrillLite[];
             <option value="library">Shared library</option>
             <option value="mine">My private drills</option>
           </select>
+          <select className="input" value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} aria-label="Sort">
+            <option value="name">Sort by name</option>
+            <option value="rating">Highest rated</option>
+          </select>
           <label className="flex items-center gap-1.5 text-sm">
             <input type="checkbox" checked={videoOnly} onChange={(e) => setVideoOnly(e.target.checked)} /> Has video
           </label>
@@ -188,8 +210,10 @@ export function DrillLibrary({ drills, sports, isAdmin }: { drills: DrillLite[];
       </div>
       <p className="text-sm text-slate-600">{filtered.length} drills</p>
       <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {filtered.map((d) => (
-          <DrillCard key={d.id} drill={d} sport={sport} editHref={isAdmin || d.ownerId ? `/drills/${d.id}` : undefined} />
+        {sorted.map((d) => (
+          <DrillCard key={d.id} drill={d} sport={sport} editHref={isAdmin || d.ownerId ? `/drills/${d.id}` : undefined}>
+            <DrillRating drillId={d.id} drillName={d.name} initial={ratings[d.id]} />
+          </DrillCard>
         ))}
       </div>
     </div>

@@ -1,7 +1,8 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "./db";
-import type { BlockType, DrillLite, PlanInput, PlanItem, ReviewStatus, SportBundle, SportConfig, TagKind, TeamWithPlayers } from "./types";
+import { collectDrillIds } from "./usage";
+import type { BlockType, DrillLite, DrillRatingSummary, DrillStat, RatingComment, PlanInput, PlanItem, ReviewStatus, SportBundle, SportConfig, TagKind, TeamWithPlayers } from "./types";
 
 const drillInclude = {
   sports: true,
@@ -151,13 +152,7 @@ export async function getTeamHistory(teamId: string | undefined, excludePlanId?:
     take: 12,
     select: { items: true, teamLeader: true },
   });
-  const ids: string[] = [];
-  const collect = (items: PlanItem[]) =>
-    items.forEach((i) => {
-      if (i.drillId) ids.push(i.drillId);
-      if (i.children) collect(i.children);
-    });
-  plans.slice(0, limit).forEach((p) => collect(p.items as unknown as PlanItem[]));
+  const ids = plans.slice(0, limit).flatMap((p) => collectDrillIds(p.items as unknown as PlanItem[]));
   return { recentDrillIds: ids, recentLeaders: plans.map((p) => p.teamLeader).filter(Boolean) };
 }
 
@@ -175,5 +170,68 @@ export async function getTeams(userId: string): Promise<TeamWithPlayers[]> {
     skillSlug: t.skillSlug,
     season: t.season,
     players: t.players.map((p) => ({ id: p.id, name: p.name, roles: p.roles as string[], active: p.active })),
+  }));
+}
+
+// ---------------------------------------------------------- Usage & ratings
+
+/** Average rating of every rated drill, plus this coach's own rating. */
+export async function getDrillRatings(userId: string): Promise<Record<string, DrillRatingSummary>> {
+  const [groups, mine] = await Promise.all([
+    prisma.drillRating.groupBy({ by: ["drillId"], _avg: { stars: true }, _count: { _all: true } }),
+    prisma.drillRating.findMany({ where: { userId }, select: { drillId: true, stars: true, comment: true } }),
+  ]);
+  const out: Record<string, DrillRatingSummary> = {};
+  for (const g of groups) out[g.drillId] = { avg: g._avg.stars, count: g._count._all, mine: null, myComment: "" };
+  for (const r of mine) {
+    out[r.drillId] = { ...(out[r.drillId] ?? { avg: r.stars, count: 1 }), mine: r.stars, myComment: r.comment };
+  }
+  return out;
+}
+
+/** Usage and rating totals for every drill, for the admin panel. */
+export async function getDrillStats(): Promise<DrillStat[]> {
+  const rows = await prisma.$queryRaw<
+    { id: string; name: string; blockType: string; ownerId: string | null; plans: bigint; coaches: bigint; lastUsed: string | null; avgRating: number | null; ratingCount: bigint }[]
+  >`
+    SELECT d."id", d."name", d."blockType", d."ownerId",
+      COUNT(DISTINCT pd."planId") AS "plans",
+      COUNT(DISTINCT p."userId") AS "coaches",
+      MAX(p."date") AS "lastUsed",
+      (SELECT AVG(r."stars") FROM "DrillRating" r WHERE r."drillId" = d."id") AS "avgRating",
+      (SELECT COUNT(*) FROM "DrillRating" r WHERE r."drillId" = d."id") AS "ratingCount"
+    FROM "Drill" d
+    LEFT JOIN "PlanDrill" pd ON pd."drillId" = d."id"
+    LEFT JOIN "Plan" p ON p."id" = pd."planId"
+    GROUP BY d."id"
+    ORDER BY d."name"`;
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    blockType: r.blockType as BlockType,
+    isPrivate: r.ownerId !== null,
+    plans: Number(r.plans),
+    coaches: Number(r.coaches),
+    lastUsed: r.lastUsed ?? "",
+    avgRating: r.avgRating === null ? null : Number(r.avgRating),
+    ratingCount: Number(r.ratingCount),
+  }));
+}
+
+/** The latest ratings that came with a comment, newest first. */
+export async function getRecentRatingComments(limit = 20): Promise<RatingComment[]> {
+  const rows = await prisma.drillRating.findMany({
+    where: { comment: { not: "" } },
+    orderBy: { updatedAt: "desc" },
+    take: limit,
+    include: { drill: { select: { name: true } }, user: { select: { name: true } } },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    drillName: r.drill.name,
+    coachName: r.user.name,
+    stars: r.stars,
+    comment: r.comment,
+    updatedAt: r.updatedAt.toISOString(),
   }));
 }

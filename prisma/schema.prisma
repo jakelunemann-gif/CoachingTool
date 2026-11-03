@@ -28,6 +28,7 @@ model User {
   locations     Location[]
   drills        Drill[]       @relation("OwnedDrills")
   submissions   Drill[]       @relation("SubmittedDrills")
+  ratings       DrillRating[]
   createdAt     DateTime      @default(now())
 }
 
@@ -99,6 +100,8 @@ model Drill {
   // are what it requires. An empty age or surface list means "any".
   tags            Tag[]
   videos          DrillVideo[]
+  planUses        PlanDrill[]
+  ratings         DrillRating[]
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 }
@@ -187,6 +190,36 @@ model Plan {
   // string[] JSON of generator warnings shown in the editor
   warnings    Json     @default("[]")
   driveFileId String   @default("")
+  drillUses   PlanDrill[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// Which drills a plan uses, rebuilt from Plan.items on every plan write so
+// usage can be counted in SQL. Deleting a plan or drill removes its rows.
+model PlanDrill {
+  planId  String
+  plan    Plan   @relation(fields: [planId], references: [id], onDelete: Cascade)
+  drillId String
+  drill   Drill  @relation(fields: [drillId], references: [id], onDelete: Cascade)
+  // Times the drill appears in the plan (e.g. the same station twice).
+  count   Int    @default(1)
+
+  @@id([planId, drillId])
+  @@index([drillId])
+}
+
+// One rating per coach per drill; rating again replaces it.
+model DrillRating {
+  id        String   @id @default(cuid())
+  drillId   String
+  drill     Drill    @relation(fields: [drillId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stars     Int // 1-5
+  comment   String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([drillId, userId])
 }

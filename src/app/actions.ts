@@ -12,6 +12,7 @@ import { coachName, planTitle, sameCoach } from "@/lib/format";
 import { generatePlan } from "@/lib/generator";
 import { randomSeed } from "@/lib/generator/random";
 import { BLOCK_TYPES, TAG_KINDS, type PlanInput, type PlanItem } from "@/lib/types";
+import { syncPlanDrills } from "@/lib/usage";
 
 // --------------------------------------------------------------- Accounts
 
@@ -128,22 +129,26 @@ export async function createPlan(raw: PlanInput): Promise<{ id?: string; error?:
   }
   const seed = randomSeed();
   const { sport, plan } = await runGenerator(user, input, seed);
-  const created = await prisma.plan.create({
-    data: {
-      userId: user.id,
-      title: planTitle(input.date, input.teamName, sport.name),
-      sportId: sport.id,
-      teamId: input.teamId || null,
-      date: input.date,
-      startTime: input.startTime,
-      durationMin: input.durationMin,
-      location: input.location,
-      teamLeader: plan.teamLeader,
-      seed,
-      input: input as object,
-      items: plan.items as object[],
-      warnings: plan.warnings,
-    },
+  const created = await prisma.$transaction(async (tx) => {
+    const p = await tx.plan.create({
+      data: {
+        userId: user.id,
+        title: planTitle(input.date, input.teamName, sport.name),
+        sportId: sport.id,
+        teamId: input.teamId || null,
+        date: input.date,
+        startTime: input.startTime,
+        durationMin: input.durationMin,
+        location: input.location,
+        teamLeader: plan.teamLeader,
+        seed,
+        input: input as object,
+        items: plan.items as object[],
+        warnings: plan.warnings,
+      },
+    });
+    await syncPlanDrills(tx, p.id, plan.items);
+    return p;
   });
   revalidatePath("/plans");
   return { id: created.id };
@@ -154,18 +159,24 @@ export async function regeneratePlan(id: string): Promise<{ items: PlanItem[]; w
   const existing = await prisma.plan.findUniqueOrThrow({ where: { id, userId: user.id } });
   const seed = randomSeed();
   const { plan } = await runGenerator(user, existing.input as unknown as PlanInput, seed, id);
-  await prisma.plan.update({
-    where: { id },
-    data: { seed, items: plan.items as object[], warnings: plan.warnings, teamLeader: plan.teamLeader },
+  await prisma.$transaction(async (tx) => {
+    await tx.plan.update({
+      where: { id },
+      data: { seed, items: plan.items as object[], warnings: plan.warnings, teamLeader: plan.teamLeader },
+    });
+    await syncPlanDrills(tx, id, plan.items);
   });
   return { items: plan.items, warnings: plan.warnings, teamLeader: plan.teamLeader };
 }
 
 export async function savePlan(id: string, data: { items: PlanItem[]; showTimes: boolean; title: string; location: string }) {
   const user = await requireUser();
-  await prisma.plan.update({
-    where: { id, userId: user.id },
-    data: { items: data.items as object[], showTimes: data.showTimes, title: data.title.trim() || "Practice Plan", location: data.location },
+  await prisma.$transaction(async (tx) => {
+    await tx.plan.update({
+      where: { id, userId: user.id },
+      data: { items: data.items as object[], showTimes: data.showTimes, title: data.title.trim() || "Practice Plan", location: data.location },
+    });
+    await syncPlanDrills(tx, id, data.items);
   });
   revalidatePath(`/plans/${id}`);
   revalidatePath("/plans");
@@ -307,6 +318,37 @@ export async function setUserRole(userId: string, role: "ADMIN" | "COACH") {
   const me = await requireAdmin();
   if (userId === me.id) throw new Error("You can't change your own role.");
   await prisma.user.update({ where: { id: userId }, data: { role: z.enum(["ADMIN", "COACH"]).parse(role) } });
+  revalidatePath("/admin");
+}
+
+// ---------------------------------------------------------------- Ratings
+
+const ratingSchema = z.object({
+  stars: z.number().int().min(1, "Pick 1 to 5 stars").max(5, "Pick 1 to 5 stars"),
+  comment: z.string().trim().max(500, "Keep comments under 500 characters"),
+});
+
+/** Saves the coach's 1-5 star rating of a drill they can see, replacing any earlier one. */
+export async function rateDrill(drillId: string, stars: number, comment = ""): Promise<{ error?: string }> {
+  const user = await requireUser();
+  const parsed = ratingSchema.safeParse({ stars, comment });
+  if (!parsed.success) return { error: parsed.error.issues.map((i) => i.message).join("; ") };
+  const visible = await prisma.drill.findFirst({ where: { id: drillId, OR: [{ ownerId: null }, { ownerId: user.id }] }, select: { id: true } });
+  if (!visible) return { error: "That drill no longer exists. Reload the page." };
+  await prisma.drillRating.upsert({
+    where: { drillId_userId: { drillId, userId: user.id } },
+    update: parsed.data,
+    create: { ...parsed.data, drillId, userId: user.id },
+  });
+  revalidatePath("/drills");
+  revalidatePath("/admin");
+  return {};
+}
+
+export async function clearDrillRating(drillId: string) {
+  const user = await requireUser();
+  await prisma.drillRating.deleteMany({ where: { drillId, userId: user.id } });
+  revalidatePath("/drills");
   revalidatePath("/admin");
 }
 

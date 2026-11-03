@@ -1,13 +1,14 @@
+import { DrillStats } from "@/components/DrillStats";
 import { ReviewQueue, RoleToggle } from "@/components/ReviewQueue";
 import { requireAdmin } from "@/lib/auth/session";
-import { getPendingDrills, getSports } from "@/lib/data";
+import { getDrillStats, getPendingDrills, getRecentRatingComments, getSports } from "@/lib/data";
 import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminPage() {
   const user = await requireAdmin();
-  const [pending, sports, library, users] = await Promise.all([
+  const [pending, sports, library, users, stats, comments] = await Promise.all([
     getPendingDrills(),
     getSports(user),
     prisma.drill.findMany({ where: { ownerId: null }, select: { name: true } }),
@@ -15,6 +16,8 @@ export default async function AdminPage() {
       orderBy: { createdAt: "asc" },
       select: { id: true, name: true, email: true, role: true, createdAt: true, _count: { select: { drills: true, plans: true, teams: true } } },
     }),
+    getDrillStats(),
+    getRecentRatingComments(),
   ]);
   return (
     <div className="space-y-6">
@@ -26,6 +29,13 @@ export default async function AdminPage() {
           </p>
         </div>
         <ReviewQueue drills={pending} sports={sports} libraryNames={library.map((d) => d.name)} />
+      </section>
+      <section className="card space-y-2">
+        <div>
+          <h2 className="h2">Drill usage &amp; ratings</h2>
+          <p className="text-sm text-slate-600">How many saved plans use each drill right now, and how coaches rate it. Swapping a drill out of a plan or deleting the plan takes it off the count.</p>
+        </div>
+        <DrillStats stats={stats} comments={comments} />
       </section>
       <section className="card space-y-2">
         <h2 className="h2">Coaches</h2>

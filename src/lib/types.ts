@@ -196,3 +196,38 @@ export interface TeamWithPlayers {
   season: string;
   players: { id: string; name: string; roles: string[]; active: boolean }[];
 }
+
+// ---------------------------------------------------------- Usage & ratings
+
+/** A drill's rating as one coach sees it in the library. */
+export interface DrillRatingSummary {
+  avg: number | null;
+  count: number;
+  mine: number | null;
+  myComment: string;
+}
+
+/** One row of the admin panel's drill usage table. */
+export interface DrillStat {
+  id: string;
+  name: string;
+  blockType: BlockType;
+  isPrivate: boolean;
+  /** Saved plans that contain the drill right now. */
+  plans: number;
+  /** Coaches with at least one such plan. */
+  coaches: number;
+  /** Date of the latest such plan (YYYY-MM-DD), or "" if none. */
+  lastUsed: string;
+  avgRating: number | null;
+  ratingCount: number;
+}
+
+export interface RatingComment {
+  id: string;
+  drillName: string;
+  coachName: string;
+  stars: number;
+  comment: string;
+  updatedAt: string;
+}

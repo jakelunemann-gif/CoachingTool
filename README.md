@@ -15,6 +15,10 @@ It starts with baseball and softball. The data model is sport-agnostic, so other
   - A drill a coach adds is private to them right away and can be used in their plans. It also goes into the admin's review queue.
   - Admins approve it into the shared library, or reject it with a note. A rejected drill stays private to that coach, who can update it and resubmit it.
   - Only admins can edit shared library drills and add tags.
+- **Drill ratings and usage**:
+  - Coaches rate drills 1–5 stars, with an optional comment, from the drill library. They can sort the library by highest rated.
+  - The **Admin** page shows, for each drill: how many saved plans use it right now, how many coaches use it, when it was last used, and its average rating. Recent comments are listed there too.
+  - Swapping a drill out of a plan or deleting the plan lowers its count.
 - **Plan form**: date, start time, length, location, playing surface, team, age and level, attendance (from a roster or a player count), coaches present, available equipment, focus areas (pick several), notes, and options for intro, dailies, side work and end game.
 - **Auto-fill**: picks drills that fit the age, surface, equipment, number of coaches and number of players.
   - Spreads drills across the selected focus areas and avoids drills from the team's last few plans.
@@ -113,7 +117,7 @@ npm test
 npm run build && npm run test:e2e
 ```
 
-`npm test` runs the unit tests (generator, groups, formatting, password hashing, exports with a mocked Drive API). `npm run test:e2e` runs the Playwright tests (team → plan → swap → print → .docx, the drill library, custom practice length, logins, and private drills going through admin review).
+`npm test` runs the unit tests (generator, groups, formatting, password hashing, exports with a mocked Drive API). `npm run test:e2e` runs the Playwright tests (team → plan → swap → print → .docx, the drill library, custom practice length, logins, and private drills going through admin review, drill ratings and usage counts).
 
 E2E runs on a throwaway `prisma/e2e.db` that is recreated each run and seeded with an admin account. Each test signs up its own coach.
 
@@ -138,9 +142,10 @@ New tags can also be added from the Settings page.
 prisma/schema.prisma          User, UserSession, Sport, Tag, Drill, DrillVideo, Team, Player, Coach, Location, Setting, Plan
 prisma/seed/                  sports, tags, and the starter drill library
 src/lib/generator/            pure plan generator (filter, groups, timeline) + tests
+src/lib/usage.ts              which drills a plan uses (kept in the PlanDrill table for usage counts)
 src/lib/export/               shared outline model → HTML / .docx / Google Doc
 src/lib/auth/                 coach logins (password hashing, sessions) and the Google sign-in for Drive
 src/middleware.ts             sends logged-out visitors to /login
 src/app/                      pages, server actions, API routes (docx, drive, auth)
-src/components/               PlanForm, PlanEditor, PlanDocument, DrillLibrary, DrillForm, ReviewQueue, TeamEditor
+src/components/               PlanForm, PlanEditor, PlanDocument, DrillLibrary, DrillRating, DrillForm, DrillStats, ReviewQueue, TeamEditor
 ```
